@@ -1,0 +1,23 @@
+feature,missing_rate,identical_rate,identical_rate_non_missing,top_value,status,dropped_at,reason
+loan_amount,0.0,0.00791268758526603,0.00791268758526603,14900000.0,selected,,
+tenor_months,0.0,0.20900409276944065,0.20900409276944065,12,selected,,
+channel,0.0,0.5006821282401092,0.5006821282401092,branch,selected,,
+is_staff_loan,0.0,0.9778990450204639,0.9778990450204639,0,dropped,Identical rate,identical rate 97.8% >= 95% (value 0)
+noise_a,0.0,0.00027285129604365623,0.00027285129604365623,-0.4168877906920077,dropped,Information Value,IV 0.0107 <= 0.02
+noise_b,0.0,0.2567530695770805,0.2567530695770805,X,dropped,Information Value,IV 0.0008 <= 0.02
+cust_age,0.0,0.031105047748976808,0.031105047748976808,53,selected,,
+cust_income,0.0,0.004092769440654843,0.004092769440654843,4410000.0,selected,,
+cust_income_band,0.0,0.41391541609822646,0.41391541609822646,4-7jt,dropped,Multicollinearity clustering,"correlated with cust_income (|corr|=0.90, IV 0.183 < 0.251)"
+cust_marital_status,0.0,0.48731241473396997,0.48731241473396997,married,dropped,Information Value,IV 0.0005 <= 0.02
+cust_province,0.0,0.24420190995907232,0.24420190995907232,Jabar,forced → discarded,Finalization,forced into the model but still fails: p-value 0.0674 >= 0.05
+cust_years_at_job,0.07312414733969987,0.07312414733969987,0.022078304386223137,,forced → discarded,Finalization,forced into the model but still fails: p-value 0.1024 >= 0.05
+cust_spouse_income,0.51268758526603,0.51268758526603,0.006159014557670772,,dropped,Missing rate,missing rate 51.3% >= 30%
+bur_count,0.1345156889495225,0.2739427012278308,0.31651954602774274,1.0,dropped,Information Value,IV 0.0028 <= 0.02
+bur_prev_amount_mean,0.1345156889495225,0.1345156889495225,0.0031525851197982345,,dropped,Information Value,IV 0.0107 <= 0.02
+bur_prev_amount_max,0.1345156889495225,0.1345156889495225,0.0031525851197982345,,dropped,Stepwise selection,not entered: LR p=0.06819 >= 0.01 given the selected features
+bur_prev_amount_min,0.1345156889495225,0.1345156889495225,0.006305170239596469,,dropped,Information Value,IV 0.0108 <= 0.02
+bur_prev_amount_sum,0.1345156889495225,0.1345156889495225,0.0037831021437578815,,dropped,Information Value,IV 0.0136 <= 0.02
+bur_prev_max_dpd_mean,0.1345156889495225,0.1345156889495225,0.1021437578814628,,selected,,
+bur_prev_max_dpd_max,0.1345156889495225,0.1345156889495225,0.12295081967213115,,dropped,Multicollinearity clustering,"correlated with bur_prev_max_dpd_mean (|corr|=0.91, IV 0.249 < 0.294)"
+bur_prev_max_dpd_min,0.1345156889495225,0.23710777626193724,0.2739596469104666,0.0,dropped,Stepwise selection,not entered: LR p=0.09188 >= 0.01 given the selected features
+bur_prev_max_dpd_sum,0.1345156889495225,0.1345156889495225,0.09583858764186633,,dropped,Multicollinearity clustering,"correlated with bur_prev_max_dpd_mean (|corr|=0.83, IV 0.249 < 0.294)"

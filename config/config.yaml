@@ -1,0 +1,93 @@
+# AutoScorecard configuration.
+# API keys are never stored here: each provider names the environment variable
+# (or .env entry) that holds its key. A provider whose key is missing is skipped.
+
+app:
+  projects_dir: projects          # one folder per modelling project
+  ledger_path: data/ledger/usage.jsonl
+  agent_language: id              # id = Bahasa Indonesia, en = English
+  deck_language: en
+
+budget:
+  # Hard stop for paid providers, in USD. Once reached, the router only uses
+  # providers whose price is 0 (e.g. Gemini free tier) or the offline provider.
+  total_usd: 4.50                 # keep a little headroom under a $5 top-up
+  per_project_usd: 1.00
+
+providers:
+  claude_haiku:
+    type: anthropic
+    model: claude-haiku-4-5
+    key_env: ANTHROPIC_API_KEY
+    max_tokens: 4096
+    # USD per 1M tokens. cache_write = 1.25x input, cache_read = 0.1x input.
+    price: {input: 1.00, output: 5.00, cache_write: 1.25, cache_read: 0.10}
+
+  claude_sonnet:
+    type: anthropic
+    model: claude-sonnet-5
+    key_env: ANTHROPIC_API_KEY
+    max_tokens: 4096
+    price: {input: 2.00, output: 10.00, cache_write: 2.50, cache_read: 0.20}
+
+  gemini_free:
+    type: openai_compat
+    base_url: https://generativelanguage.googleapis.com/v1beta/openai/
+    model: gemini-flash-latest     # check Google AI Studio for current free-tier models
+    key_env: GEMINI_API_KEY
+    max_tokens: 4096
+    rpm_limit: 8                   # free tier is roughly 10 RPM; stay under it
+    price: {input: 0, output: 0}
+
+  openai:
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    model: gpt-5-mini              # set to whichever model you want
+    key_env: OPENAI_API_KEY
+    max_tokens: 4096
+    price: {input: 0.25, output: 2.00}   # verify against current OpenAI pricing
+
+  openrouter:
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v1
+    model: anthropic/claude-haiku-4.5    # any OpenRouter model id
+    key_env: OPENROUTER_API_KEY
+    max_tokens: 4096
+    price: {input: 1.00, output: 5.00}   # verify on openrouter.ai for the chosen model
+
+  offline:
+    type: offline                  # no LLM: templated replies, always available, $0
+    price: {input: 0, output: 0}
+
+# Which provider each agent tries first. Then the router walks fallback_chain.
+agents:
+  partner: claude_haiku
+  prepper: claude_haiku
+  modeller: claude_haiku
+  deck_creator: claude_haiku
+
+fallback_chain: [claude_haiku, gemini_free, openrouter, openai, offline]
+
+# Modelling waterfall: feature-selection steps, run top to bottom. Reorder, change
+# params, or set `enabled: false` to skip a step. Allowed types and their params:
+# see autoscorecard/engine/waterfall.py (STEP_TYPES) or docs/modelling_waterfall.md.
+# A project can override this plan (API: PUT /api/projects/{id}/waterfall); the
+# user approves it before the Modeller runs.
+modelling:
+  # Custom steps: every *.py in these folders that registers a step (see
+  # plugins/steps/exclude_by_policy.py and docs/extending.md).
+  step_plugins: [plugins/steps]
+  waterfall:
+    - {type: missing_rate,        params: {max: 0.30}}
+    - {type: identical_rate,      params: {max: 0.95}}
+    - {type: iv,                  params: {min: 0.02, max: 0.5}}
+    - {type: correlation_cluster, params: {threshold: 0.7, linkage: average}}
+    - {type: stepwise,            params: {p_enter: 0.01, p_remove: 0.05}}
+    - {type: forward,             params: {p_enter: 0.01}}
+    - {type: backward,            params: {p_remove: 0.05}}
+    - {type: finalization,        params: {max_p_value: 0.05, max_vif: 5.0, max_features: 15}}
+
+  # Outlier detection (documented per variable in the data dictionary) and treatment.
+  # method: iqr (Tukey fences, k x IQR) or percentile (lower/upper); treatment: none or cap.
+  # "none" is the default: WoE end bins are open-ended, so extremes cannot pull the model.
+  outliers: {method: iqr, k: 1.5, treatment: none}

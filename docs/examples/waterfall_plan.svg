@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 526" width="720" height="526" role="img" aria-label="Modelling waterfall plan">
+<style>
+  .bg{fill:#fcfcfb} .t1{fill:#0b0b0b} .t2{fill:#52514e} .mut{fill:#898781}
+  .bar{fill:#2a78d6} .rule{stroke:#e4e3df} .card{fill:#f9f9f7;stroke:#d6d5d0}
+  .arrow{stroke:#898781;fill:none}
+  @media (prefers-color-scheme: dark){
+    .bg{fill:#1a1a19} .t1{fill:#f0efec} .t2{fill:#c3c2b7}
+    .bar{fill:#3987e5} .rule{stroke:#383835} .card{fill:#232322;stroke:#45443f}
+  }
+  text{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+</style>
+<rect class="bg" width="720" height="526"/>
+<g><title>Share of rows where the feature is empty. Measured on the training sample.</title><rect class="card" x="16" y="16" width="688" height="46" rx="6"/><text class="mut" x="30" y="44" font-size="13" font-weight="600">1</text><text class="t1" x="56" y="35" font-size="13" font-weight="600">Missing rate</text><text class="t2" x="56" y="52" font-size="11.5">missing rate &lt; 30%</text></g>
+<path class="arrow" d="M360.0 65 V77 M356.0 73 L360.0 77 L364.0 73" stroke-width="1.5"/>
+<g><title>Share of rows holding the single most frequent value (missing counts as a value unless include_missing is false). Catches near-constant features.</title><rect class="card" x="16" y="80" width="688" height="46" rx="6"/><text class="mut" x="30" y="108" font-size="13" font-weight="600">2</text><text class="t1" x="56" y="99" font-size="13" font-weight="600">Identical rate</text><text class="t2" x="56" y="116" font-size="11.5">identical rate &lt; 95%</text></g>
+<path class="arrow" d="M360.0 129 V141 M356.0 137 L360.0 141 L364.0 137" stroke-width="1.5"/>
+<g><title>IV of the monotonic WoE binning. Below min = no predictive power; above max = suspiciously strong, often leakage from the outcome.</title><rect class="card" x="16" y="144" width="688" height="46" rx="6"/><text class="mut" x="30" y="172" font-size="13" font-weight="600">3</text><text class="t1" x="56" y="163" font-size="13" font-weight="600">Information Value</text><text class="t2" x="56" y="180" font-size="11.5">0.02 &lt; IV &lt; 0.5</text></g>
+<path class="arrow" d="M360.0 193 V205 M356.0 201 L360.0 205 L364.0 201" stroke-width="1.5"/>
+<g><title>Hierarchical clustering of the WoE correlation matrix, distance 1-|corr|. Features linked at |corr| &gt;= threshold form a cluster; only the highest-IV member stays.</title><rect class="card" x="16" y="208" width="688" height="46" rx="6"/><text class="mut" x="30" y="236" font-size="13" font-weight="600">4</text><text class="t1" x="56" y="227" font-size="13" font-weight="600">Multicollinearity clustering</text><text class="t2" x="56" y="244" font-size="11.5">|corr| &lt; 0.7 between kept features (average linkage, highest IV kept)</text></g>
+<path class="arrow" d="M360.0 257 V269 M356.0 265 L360.0 269 L364.0 265" stroke-width="1.5"/>
+<g><title>Add the feature with the smallest likelihood-ratio p-value (&lt; p_enter), then remove any whose Wald p-value rose above p_remove. Repeat.</title><rect class="card" x="16" y="272" width="688" height="46" rx="6"/><text class="mut" x="30" y="300" font-size="13" font-weight="600">5</text><text class="t1" x="56" y="291" font-size="13" font-weight="600">Stepwise selection</text><text class="t2" x="56" y="308" font-size="11.5">enter p &lt; 0.01, stay p &lt; 0.05, max 15 features and all coefficients &lt; 0</text></g>
+<path class="arrow" d="M360.0 321 V333 M356.0 329 L360.0 333 L364.0 329" stroke-width="1.5"/>
+<g><title>Start empty and add features one by one while the best LR p-value &lt; p_enter.</title><rect class="card" x="16" y="336" width="688" height="46" rx="6"/><text class="mut" x="30" y="364" font-size="13" font-weight="600">6</text><text class="t1" x="56" y="355" font-size="13" font-weight="600">Forward selection</text><text class="t2" x="56" y="372" font-size="11.5">enter p &lt; 0.01, max 15 features and all coefficients &lt; 0</text></g>
+<path class="arrow" d="M360.0 385 V397 M356.0 393 L360.0 397 L364.0 393" stroke-width="1.5"/>
+<g><title>Start with all features and remove the one with the largest Wald p-value while it is above p_remove.</title><rect class="card" x="16" y="400" width="688" height="46" rx="6"/><text class="mut" x="30" y="428" font-size="13" font-weight="600">7</text><text class="t1" x="56" y="419" font-size="13" font-weight="600">Backward elimination</text><text class="t2" x="56" y="436" font-size="11.5">stay p &lt; 0.05 and all coefficients &lt; 0</text></g>
+<path class="arrow" d="M360.0 449 V461 M356.0 457 L360.0 461 L364.0 457" stroke-width="1.5"/>
+<g><title>Final checks on the model, fixed one feature at a time: positive coefficient, then p-value, then VIF, then the feature count (weakest |z| out first). Forced features are added back here and discarded only if they still fail.</title><rect class="card" x="16" y="464" width="688" height="46" rx="6"/><text class="mut" x="30" y="492" font-size="13" font-weight="600">8</text><text class="t1" x="56" y="483" font-size="13" font-weight="600">Finalization</text><text class="t2" x="56" y="500" font-size="11.5">p &lt; 0.05, VIF &lt; 5, max 15 features and all coefficients &lt; 0</text></g>
+</svg>

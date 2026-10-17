@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+projects/*
+!projects/.gitkeep
+data/ledger/
+node_modules/
+autoscorecard.egg-info/
+*.egg-info/

@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 522" width="720" height="522" role="img" aria-label="Features remaining after each waterfall step">
+<style>
+  .bg{fill:#fcfcfb} .t1{fill:#0b0b0b} .t2{fill:#52514e} .mut{fill:#898781}
+  .bar{fill:#2a78d6} .rule{stroke:#e4e3df} .card{fill:#f9f9f7;stroke:#d6d5d0}
+  .arrow{stroke:#898781;fill:none}
+  @media (prefers-color-scheme: dark){
+    .bg{fill:#1a1a19} .t1{fill:#f0efec} .t2{fill:#c3c2b7}
+    .bar{fill:#3987e5} .rule{stroke:#383835} .card{fill:#232322;stroke:#45443f}
+  }
+  text{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+</style>
+<rect class="bg" width="720" height="522"/>
+<text class="t1" x="16" y="28" font-size="14" font-weight="600">Features remaining after each step</text>
+<g><title>Input: candidate features. In 22, dropped 0, left 22</title><rect x="0" y="38" width="720" height="52" fill="transparent"/><text class="t1" x="16" y="54" font-size="12.5" font-weight="600">Input<tspan class="t2" font-weight="400" dx="8">candidate features</tspan></text><path class="bar" d="M16 64 H550.0 a4 4 0 0 1 4 4 V74 a4 4 0 0 1 -4 4 H16 Z"/><text class="t1" x="562.0" y="75" font-size="12">22 left</text></g>
+<g><title>Missing rate: missing rate &lt; 30%. In 22, dropped 1, left 21</title><rect x="0" y="90" width="720" height="52" fill="transparent"/><text class="t1" x="16" y="106" font-size="12.5" font-weight="600">1. Missing rate<tspan class="t2" font-weight="400" dx="8">missing rate &lt; 30%</tspan></text><path class="bar" d="M16 116 H525.5454545454545 a4 4 0 0 1 4 4 V126 a4 4 0 0 1 -4 4 H16 Z"/><text class="t1" x="537.5454545454545" y="127" font-size="12">21 left  (−1)</text></g>
+<line class="rule" x1="16" x2="704" y1="90.5" y2="90.5"/>
+<g><title>Identical rate: identical rate &lt; 95%. In 21, dropped 1, left 20</title><rect x="0" y="142" width="720" height="52" fill="transparent"/><text class="t1" x="16" y="158" font-size="12.5" font-weight="600">2. Identical rate<tspan class="t2" font-weight="400" dx="8">identical rate &lt; 95%</tspan></text><path class="bar" d="M16 168 H501.09090909090907 a4 4 0 0 1 4 4 V178 a4 4 0 0 1 -4 4 H16 Z"/><text class="t1" x="513.090909090909" y="179" font-size="12">20 left  (−1)</text></g>
+<line class="rule" x1="16" x2="704" y1="142.5" y2="142.5"/>
+<g><title>Information Value: 0.02 &lt; IV &lt; 0.5. In 20, dropped 8, left 12</title><rect x="0" y="194" width="720" height="52" fill="transparent"/><text class="t1" x="16" y="210" font-size="12.5" font-weight="600">3. Information Value<tspan class="t2" font-weight="400" dx="8">0.02 &lt; IV &lt; 0.5</tspan></text><path class="bar" d="M16 220 H305.45454545454544 a4 4 0 0 1 4 4 V230 a4 4 0 0 1 -4 4 H16 Z"/><text class="t1" x="317.45454545454544" y="231" font-size="12">12 left  (−8)</text></g>
+<line class="rule" x1="16" x2="704" y1="194.5" y2="194.5"/>
+<g><title>Multicollinearity clustering: |corr| &lt; 0.7 between kept features (average linkage, highest IV kept). In 12, dropped 3, left 9</title><rect x="0" y="246" width="720" height="52" fill="transparent"/><text class="t1" x="16" y="262" font-size="12.5" font-weight="600">4. Multicollinearity clustering<tspan class="t2" font-weight="400" dx="8">|corr| &lt; 0.7 between kept features (average linkage, highest IV kept)</tspan></text><path class="bar" d="M16 272 H232.0909090909091 a4 4 0 0 1 4 4 V282 a4 4 0 0 1 -4 4 H16 Z"/><text class="t1" x="244.0909090909091" y="283" font-size="12">9 left  (−3)</text></g>
+<line class="rule" x1="16" x2="704" y1="246.5" y2="246.5"/>
+<g><title>Stepwise selection: enter p &lt; 0.01, stay p &lt; 0.05, max 15 features and all coefficients &lt; 0. In 9, dropped 3, left 6</title><rect x="0" y="298" width="720" height="52" fill="transparent"/><text class="t1" x="16" y="314" font-size="12.5" font-weight="600">5. Stepwise selection<tspan class="t2" font-weight="400" dx="8">enter p &lt; 0.01, stay p &lt; 0.05, max 15 features and all coefficients &lt; 0</tspan></text><path class="bar" d="M16 324 H158.72727272727272 a4 4 0 0 1 4 4 V334 a4 4 0 0 1 -4 4 H16 Z"/><text class="t1" x="170.72727272727272" y="335" font-size="12">6 left  (−3)</text></g>
+<line class="rule" x1="16" x2="704" y1="298.5" y2="298.5"/>
+<g><title>Forward selection: enter p &lt; 0.01, max 15 features and all coefficients &lt; 0. In 6, dropped 0, left 6</title><rect x="0" y="350" width="720" height="52" fill="transparent"/><text class="t1" x="16" y="366" font-size="12.5" font-weight="600">6. Forward selection<tspan class="t2" font-weight="400" dx="8">enter p &lt; 0.01, max 15 features and all coefficients &lt; 0</tspan></text><path class="bar" d="M16 376 H158.72727272727272 a4 4 0 0 1 4 4 V386 a4 4 0 0 1 -4 4 H16 Z"/><text class="t1" x="170.72727272727272" y="387" font-size="12">6 left</text></g>
+<line class="rule" x1="16" x2="704" y1="350.5" y2="350.5"/>
+<g><title>Backward elimination: stay p &lt; 0.05 and all coefficients &lt; 0. In 6, dropped 0, left 6</title><rect x="0" y="402" width="720" height="52" fill="transparent"/><text class="t1" x="16" y="418" font-size="12.5" font-weight="600">7. Backward elimination<tspan class="t2" font-weight="400" dx="8">stay p &lt; 0.05 and all coefficients &lt; 0</tspan></text><path class="bar" d="M16 428 H158.72727272727272 a4 4 0 0 1 4 4 V438 a4 4 0 0 1 -4 4 H16 Z"/><text class="t1" x="170.72727272727272" y="439" font-size="12">6 left</text></g>
+<line class="rule" x1="16" x2="704" y1="402.5" y2="402.5"/>
+<g><title>Finalization: p &lt; 0.05, VIF &lt; 5, max 15 features and all coefficients &lt; 0. In 6, dropped 2, left 6</title><rect x="0" y="454" width="720" height="52" fill="transparent"/><text class="t1" x="16" y="470" font-size="12.5" font-weight="600">8. Finalization<tspan class="t2" font-weight="400" dx="8">p &lt; 0.05, VIF &lt; 5, max 15 features and all coefficients &lt; 0</tspan></text><path class="bar" d="M16 480 H158.72727272727272 a4 4 0 0 1 4 4 V490 a4 4 0 0 1 -4 4 H16 Z"/><text class="t1" x="170.72727272727272" y="491" font-size="12">6 left  (−2)</text></g>
+<line class="rule" x1="16" x2="704" y1="454.5" y2="454.5"/>
+</svg>

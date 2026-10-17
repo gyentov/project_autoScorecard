@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 467 384" width="467" height="384" role="img" aria-label="Raw-value correlation (Spearman), reference only">
+<style>
+  .bg{fill:#fcfcfb} .t1{fill:#0b0b0b} .t2{fill:#52514e} .mut{fill:#898781}
+  .bar{fill:#2a78d6} .rule{stroke:#e4e3df} .card{fill:#f9f9f7;stroke:#d6d5d0}
+  .arrow{stroke:#898781;fill:none}
+  @media (prefers-color-scheme: dark){
+    .bg{fill:#1a1a19} .t1{fill:#f0efec} .t2{fill:#c3c2b7}
+    .bar{fill:#3987e5} .rule{stroke:#383835} .card{fill:#232322;stroke:#45443f}
+  }
+  text{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+</style>
+<style>.d0{fill:#e34948} .d0t{fill:#0b0b0b} .d1{fill:#ea7069} .d1t{fill:#0b0b0b} .d2{fill:#f09289} .d2t{fill:#0b0b0b} .d3{fill:#f2b1aa} .d3t{fill:#0b0b0b} .d4{fill:#f3d0cb} .d4t{fill:#0b0b0b} .d5{fill:#f0efec} .d5t{fill:#0b0b0b} .d6{fill:#c9d8ea} .d6t{fill:#0b0b0b} .d7{fill:#a3c1e7} .d7t{fill:#0b0b0b} .d8{fill:#7da9e2} .d8t{fill:#0b0b0b} .d9{fill:#5691dd} .d9t{fill:#0b0b0b} .d10{fill:#2a78d6} .d10t{fill:#0b0b0b} .hl{stroke:#0b0b0b} @media (prefers-color-scheme: dark){.d0{fill:#e66767} .d0t{fill:#0b0b0b} .d1{fill:#c15f5d} .d1t{fill:#0b0b0b} .d2{fill:#9e5653} .d2t{fill:#ffffff} .d3{fill:#7b4d49} .d3t{fill:#ffffff} .d4{fill:#5a433f} .d4t{fill:#ffffff} .d5{fill:#383835} .d5t{fill:#ffffff} .d6{fill:#3b4856} .d6t{fill:#ffffff} .d7{fill:#3d5878} .d7t{fill:#ffffff} .d8{fill:#3e689b} .d8t{fill:#ffffff} .d9{fill:#3c77bf} .d9t{fill:#0b0b0b} .d10{fill:#3987e5} .d10t{fill:#0b0b0b} .hl{stroke:#f0efec}}</style>
+<rect class="bg" width="467" height="384"/>
+<text class="t1" x="16" y="28" font-size="14" font-weight="600">Raw-value correlation (Spearman), reference only</text>
+<text class="mut" x="217.0" y="56" font-size="11" text-anchor="middle">1</text>
+<text class="mut" x="269.0" y="56" font-size="11" text-anchor="middle">2</text>
+<text class="mut" x="321.0" y="56" font-size="11" text-anchor="middle">3</text>
+<text class="mut" x="373.0" y="56" font-size="11" text-anchor="middle">4</text>
+<text class="mut" x="425.0" y="56" font-size="11" text-anchor="middle">5</text>
+<text class="t1" x="183" y="92.0" font-size="11.5" text-anchor="end">1. loan_amount</text>
+<g><title>loan_amount × loan_amount: r = 1.000</title><rect x="192" y="63" width="50" height="50" rx="3" class="d10"/><text class="d10t" x="217.0" y="92.0" font-size="11" text-anchor="middle">1.00</text></g>
+<text class="t1" x="183" y="144.0" font-size="11.5" text-anchor="end">2. tenor_months</text>
+<g><title>tenor_months × loan_amount: r = 0.017</title><rect x="192" y="115" width="50" height="50" rx="3" class="d5"/><text class="d5t" x="217.0" y="144.0" font-size="11" text-anchor="middle">0.02</text></g>
+<g><title>tenor_months × tenor_months: r = 1.000</title><rect x="244" y="115" width="50" height="50" rx="3" class="d10"/><text class="d10t" x="269.0" y="144.0" font-size="11" text-anchor="middle">1.00</text></g>
+<text class="t1" x="183" y="196.0" font-size="11.5" text-anchor="end">3. cust_age</text>
+<g><title>cust_age × loan_amount: r = 0.010</title><rect x="192" y="167" width="50" height="50" rx="3" class="d5"/><text class="d5t" x="217.0" y="196.0" font-size="11" text-anchor="middle">0.01</text></g>
+<g><title>cust_age × tenor_months: r = -0.009</title><rect x="244" y="167" width="50" height="50" rx="3" class="d5"/><text class="d5t" x="269.0" y="196.0" font-size="11" text-anchor="middle">-0.01</text></g>
+<g><title>cust_age × cust_age: r = 1.000</title><rect x="296" y="167" width="50" height="50" rx="3" class="d10"/><text class="d10t" x="321.0" y="196.0" font-size="11" text-anchor="middle">1.00</text></g>
+<text class="t1" x="183" y="248.0" font-size="11.5" text-anchor="end">4. cust_income</text>
+<g><title>cust_income × loan_amount: r = 0.005</title><rect x="192" y="219" width="50" height="50" rx="3" class="d5"/><text class="d5t" x="217.0" y="248.0" font-size="11" text-anchor="middle">0.01</text></g>
+<g><title>cust_income × tenor_months: r = 0.015</title><rect x="244" y="219" width="50" height="50" rx="3" class="d5"/><text class="d5t" x="269.0" y="248.0" font-size="11" text-anchor="middle">0.02</text></g>
+<g><title>cust_income × cust_age: r = 0.009</title><rect x="296" y="219" width="50" height="50" rx="3" class="d5"/><text class="d5t" x="321.0" y="248.0" font-size="11" text-anchor="middle">0.01</text></g>
+<g><title>cust_income × cust_income: r = 1.000</title><rect x="348" y="219" width="50" height="50" rx="3" class="d10"/><text class="d10t" x="373.0" y="248.0" font-size="11" text-anchor="middle">1.00</text></g>
+<text class="t1" x="183" y="300.0" font-size="11.5" text-anchor="end">5. bur_prev_max_dpd_mean</text>
+<g><title>bur_prev_max_dpd_mean × loan_amount: r = -0.012</title><rect x="192" y="271" width="50" height="50" rx="3" class="d5"/><text class="d5t" x="217.0" y="300.0" font-size="11" text-anchor="middle">-0.01</text></g>
+<g><title>bur_prev_max_dpd_mean × tenor_months: r = -0.033</title><rect x="244" y="271" width="50" height="50" rx="3" class="d5"/><text class="d5t" x="269.0" y="300.0" font-size="11" text-anchor="middle">-0.03</text></g>
+<g><title>bur_prev_max_dpd_mean × cust_age: r = -0.002</title><rect x="296" y="271" width="50" height="50" rx="3" class="d5"/><text class="d5t" x="321.0" y="300.0" font-size="11" text-anchor="middle">0.00</text></g>
+<g><title>bur_prev_max_dpd_mean × cust_income: r = -0.029</title><rect x="348" y="271" width="50" height="50" rx="3" class="d5"/><text class="d5t" x="373.0" y="300.0" font-size="11" text-anchor="middle">-0.03</text></g>
+<g><title>bur_prev_max_dpd_mean × bur_prev_max_dpd_mean: r = 1.000</title><rect x="400" y="271" width="50" height="50" rx="3" class="d10"/><text class="d10t" x="425.0" y="300.0" font-size="11" text-anchor="middle">1.00</text></g>
+<rect class="d0" x="16" y="344" width="20" height="10" rx="2"/>
+<rect class="d1" x="38" y="344" width="20" height="10" rx="2"/>
+<rect class="d2" x="60" y="344" width="20" height="10" rx="2"/>
+<rect class="d3" x="82" y="344" width="20" height="10" rx="2"/>
+<rect class="d4" x="104" y="344" width="20" height="10" rx="2"/>
+<rect class="d5" x="126" y="344" width="20" height="10" rx="2"/>
+<rect class="d6" x="148" y="344" width="20" height="10" rx="2"/>
+<rect class="d7" x="170" y="344" width="20" height="10" rx="2"/>
+<rect class="d8" x="192" y="344" width="20" height="10" rx="2"/>
+<rect class="d9" x="214" y="344" width="20" height="10" rx="2"/>
+<rect class="d10" x="236" y="344" width="20" height="10" rx="2"/>
+<text class="t2" x="16" y="370" font-size="11" text-anchor="start">−1 (negative)</text>
+<text class="t2" x="136.0" y="370" font-size="11" text-anchor="middle">0</text>
+<text class="t2" x="256" y="370" font-size="11" text-anchor="end">+1 (positive)</text>
+</svg>
