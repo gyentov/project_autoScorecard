@@ -1,6 +1,6 @@
 # Finalization review
 
-Build `20261018-003109-f46bb7`: **DRAFT, waiting for your confirmation**.
+Build `20261018-012322-b891ae`: **DRAFT, waiting for your confirmation**.
 
 ## Forced features
 
@@ -38,4 +38,4 @@ After:
 | (45, 55] | 847 | 0.08383 | 0.2433 |
 | (55, inf] | 779 | 0.0475 | 0.8503 |
 
-Confirm with `POST /api/projects/{id}/finalization/confirm` (`{"build_id": "20261018-003109-f46bb7"}`). Changing the edits or forced features needs a rebuild before confirming.
+Confirm with `POST /api/projects/{id}/finalization/confirm` (`{"build_id": "20261018-012322-b891ae"}`). Changing the edits or forced features needs a rebuild before confirming.

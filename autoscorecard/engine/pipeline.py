@@ -11,6 +11,7 @@ calls `build_scorecard(..., require_approved=True)` once it is approved.
 from __future__ import annotations
 
 import json
+import shutil
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -88,10 +89,12 @@ class BuildResult:
 
 
 class _Log:
-    """Collects audit records; writes them to the project audit log if there is one."""
+    """Collects audit records; writes them to the project audit log if there is one,
+    and passes them to `progress` (the office turns them into live events)."""
 
-    def __init__(self, project=None):
+    def __init__(self, project=None, progress=None):
         self.project = project
+        self.progress = progress
         self.records: list[dict] = []
 
     def __call__(self, action: str, detail: dict | None = None, reason: str | None = None):
@@ -99,18 +102,24 @@ class _Log:
         self.records.append(rec)
         if self.project is not None:
             self.project.audit("engine", action, detail, reason)
+        if self.progress is not None:
+            self.progress(action, detail or {}, reason)
 
 
 def build_scorecard(df: pd.DataFrame, y: pd.Series, features: list[str],
                     cfg: ScorecardConfig | None = None, project=None,
                     require_approved: bool = False,
-                    dictionary: DataDictionary | None = None) -> BuildResult:
+                    dictionary: DataDictionary | None = None,
+                    progress=None, snapshot: str | None = None) -> BuildResult:
     """Build a scorecard. With a project that has a saved waterfall plan, that plan
     is used instead of cfg.waterfall; `require_approved` refuses to run an
     unapproved plan. `dictionary` (or the project's saved one) supplies variable
-    descriptions, types and lineage for the raw-data documentation."""
+    descriptions, types and lineage for the raw-data documentation.
+    progress(action, detail, reason) is called for every logged step.
+    snapshot: also copy this build's artifacts to artifacts/<snapshot>/ (e.g. "cut1"),
+    so later builds do not overwrite them."""
     cfg = cfg or ScorecardConfig()
-    log = _Log(project)
+    log = _Log(project, progress)
     plan_spec, approved = cfg.waterfall, None
     if project is not None and (project.dir("work") / "waterfall.json").exists():
         plan = load_plan(project)
@@ -185,6 +194,13 @@ def build_scorecard(df: pd.DataFrame, y: pd.Series, features: list[str],
     res = BuildResult(sc, wf, perf, psi, v, splits, build_id, inputs, ddict, raw_corr, rule)
     if project is not None:
         _save_artifacts(project, res)
+        if snapshot:
+            dest = project.dir("artifacts") / snapshot
+            dest.mkdir(exist_ok=True)
+            for f in project.dir("artifacts").iterdir():
+                if f.is_file():
+                    shutil.copy2(f, dest / f.name)
+            log("snapshot", {"dir": str(dest), "build_id": build_id})
     return res
 
 

@@ -46,8 +46,8 @@ class ClusterResult:
 
 
 def correlation_clusters(X: pd.DataFrame, iv: dict[str, float], threshold: float = 0.7,
-                         method: str = "average", corr_method: str = "pearson"
-                         ) -> ClusterResult:
+                         method: str = "average", corr_method: str = "pearson",
+                         enforce_pairwise: bool = True) -> ClusterResult:
     """Agglomerative hierarchical clustering on distance d = 1 - |corr|.
 
     Start with each feature in its own cluster; repeatedly join the two closest
@@ -58,6 +58,12 @@ def correlation_clusters(X: pd.DataFrame, iv: dict[str, float], threshold: float
     Joins are recorded for the full tree, but clusters are cut at distance
     1 - threshold: features end up together only if they are linked at
     |corr| >= threshold. From each cluster the feature with the highest IV is kept.
+
+    With average (or complete) linkage two features in DIFFERENT clusters can still
+    have |corr| >= threshold, because clusters are compared on averages. With
+    `enforce_pairwise` (default) the threshold is a hard limit: after clustering,
+    while any two kept features have |corr| >= threshold, the one with the lower
+    IV is dropped. So every pair of survivors has |corr| < threshold.
     """
     if method not in ("single", "complete", "average"):
         raise ValueError("method must be single, complete or average")
@@ -111,8 +117,20 @@ def correlation_clusters(X: pd.DataFrame, iv: dict[str, float], threshold: float
                             f"correlated with {names[0]} (|corr|={abs(corr.loc[f, names[0]]):.2f}, "
                             f"IV {iv.get(f, 0):.3f} < {iv.get(names[0], 0):.3f})"})
     order = sorted(range(len(clusters)), key=lambda k: -iv.get(reps[k], 0.0))
-    return ClusterResult([clusters[k] for k in order], [reps[k] for k in order],
-                         dropped, linkage, corr)
+    clusters, reps = [clusters[k] for k in order], [reps[k] for k in order]
+    if enforce_pairwise:
+        kept: list[str] = []
+        for f in reps:                                 # highest IV first
+            clash = next((g for g in kept if abs(corr.loc[f, g]) >= threshold), None)
+            if clash is None:
+                kept.append(f)
+            else:
+                dropped.append({"feature": f, "reason":
+                                f"|corr| with {clash} = {abs(corr.loc[f, clash]):.2f} >= "
+                                f"{threshold:g} (pairwise check after clustering; IV "
+                                f"{iv.get(f, 0):.3f} < {iv.get(clash, 0):.3f})"})
+        reps = kept
+    return ClusterResult(clusters, reps, dropped, linkage, corr)
 
 
 # --------------------------------------------------------------------------- stepwise

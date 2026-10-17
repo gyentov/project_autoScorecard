@@ -1,6 +1,6 @@
 # Modelling waterfall report
 
-Generated 2026-10-18 00:31. 22 candidate features → **6 in the final model**.
+Generated 2026-10-18 01:23. 22 candidate features → **6 in the final model**.
 
 ![Features remaining after each step](waterfall.svg)
 
@@ -12,8 +12,8 @@ Generated 2026-10-18 00:31. 22 candidate features → **6 in the final model**.
 | 1 | Missing rate | missing rate < 30% | 22 | 0 | 1 | 21 |
 | 2 | Identical rate | identical rate < 95% | 21 | 0 | 1 | 20 |
 | 3 | Information Value | 0.02 < IV < 0.5 | 20 | 0 | 8 | 12 |
-| 4 | Multicollinearity clustering | \|corr\| < 0.7 between kept features (average linkage, highest IV kept) | 12 | 0 | 3 | 9 |
-| 5 | Stepwise selection | enter p < 0.01, stay p < 0.05, max 15 features and all coefficients < 0 | 9 | 0 | 3 | 6 |
+| 4 | Multicollinearity clustering | \|corr\| < 0.7 between kept features (average linkage, highest IV kept) | 12 | 0 | 4 | 8 |
+| 5 | Stepwise selection | enter p < 0.01, stay p < 0.05, max 15 features and all coefficients < 0 | 8 | 0 | 2 | 6 |
 | 6 | Forward selection | enter p < 0.01, max 15 features and all coefficients < 0 | 6 | 0 | 0 | 6 |
 | 7 | Backward elimination | stay p < 0.05 and all coefficients < 0 | 6 | 0 | 0 | 6 |
 | 8 | Finalization | p < 0.05, VIF < 5, max 15 features and all coefficients < 0 | 6 | 2 | 2 | 6 |
@@ -29,9 +29,9 @@ flowchart TD
     S1 --> S2
     S3["3. Information Value<br/>0.02 #lt; IV #lt; 0.5<br/><b>-8 → 12 left</b>"]
     S2 --> S3
-    S4["4. Multicollinearity clustering<br/>|corr| #lt; 0.7 between kept features (average linkage, highest IV kept)<br/><b>-3 → 9 left</b>"]
+    S4["4. Multicollinearity clustering<br/>|corr| #lt; 0.7 between kept features (average linkage, highest IV kept)<br/><b>-4 → 8 left</b>"]
     S3 --> S4
-    S5["5. Stepwise selection<br/>enter p #lt; 0.01, stay p #lt; 0.05, max 15 features and all coefficients #lt; 0<br/><b>-3 → 6 left</b>"]
+    S5["5. Stepwise selection<br/>enter p #lt; 0.01, stay p #lt; 0.05, max 15 features and all coefficients #lt; 0<br/><b>-2 → 6 left</b>"]
     S4 --> S5
     S6["6. Forward selection<br/>enter p #lt; 0.01, max 15 features and all coefficients #lt; 0<br/><b>-0 → 6 left</b>"]
     S5 --> S6
@@ -164,7 +164,7 @@ Dropped:
 
 Keeps a feature when: **|corr| < 0.7 between kept features (average linkage, highest IV kept)**. Hierarchical clustering of the WoE correlation matrix, distance 1-|corr|. Features linked at |corr| >= threshold form a cluster; only the highest-IV member stays.
 
-In: 12 · dropped: 3 · out: 9
+In: 12 · dropped: 4 · out: 8
 
 Clusters with more than one member (first = kept, highest IV):
 
@@ -178,12 +178,13 @@ Dropped:
 | cust_income_band | correlated with cust_income (\|corr\|=0.90, IV 0.183 < 0.251) |
 | bur_prev_max_dpd_max | correlated with bur_prev_max_dpd_mean (\|corr\|=0.91, IV 0.249 < 0.294) |
 | bur_prev_max_dpd_sum | correlated with bur_prev_max_dpd_mean (\|corr\|=0.83, IV 0.249 < 0.294) |
+| bur_prev_max_dpd_min | \|corr\| with bur_prev_max_dpd_mean = 0.74 >= 0.7 (pairwise check after clustering; IV 0.223 < 0.294) |
 
 ## 5. Stepwise selection
 
 Keeps a feature when: **enter p < 0.01, stay p < 0.05, max 15 features and all coefficients < 0**. Add the feature with the smallest likelihood-ratio p-value (< p_enter), then remove any whose Wald p-value rose above p_remove. Repeat.
 
-In: 9 · dropped: 3 · out: 6
+In: 8 · dropped: 2 · out: 6
 
 Selection trace:
 
@@ -202,7 +203,6 @@ Dropped:
 |---|---|
 | cust_province | not entered: LR p=0.06143 >= 0.01 given the selected features |
 | bur_prev_amount_max | not entered: LR p=0.06819 >= 0.01 given the selected features |
-| bur_prev_max_dpd_min | not entered: LR p=0.09188 >= 0.01 given the selected features |
 
 ## 6. Forward selection
 
@@ -287,7 +287,7 @@ Not shown (categorical, no raw numeric value): channel.
 
 ## Finalization review
 
-Build `20261018-003109-f46bb7`: **DRAFT, waiting for your confirmation**.
+Build `20261018-012322-b891ae`: **DRAFT, waiting for your confirmation**.
 
 ### Forced features
 
@@ -325,7 +325,7 @@ After:
 | (45, 55] | 847 | 0.08383 | 0.2433 |
 | (55, inf] | 779 | 0.0475 | 0.8503 |
 
-Confirm with `POST /api/projects/{id}/finalization/confirm` (`{"build_id": "20261018-003109-f46bb7"}`). Changing the edits or forced features needs a rebuild before confirming.
+Confirm with `POST /api/projects/{id}/finalization/confirm` (`{"build_id": "20261018-012322-b891ae"}`). Changing the edits or forced features needs a rebuild before confirming.
 
 ## Performance
 
@@ -364,5 +364,5 @@ Confirm with `POST /api/projects/{id}/finalization/confirm` (`{"build_id": "2026
 | bur_prev_amount_sum | dropped | Information Value | 0.1345 | 0.1345 | IV 0.0136 <= 0.02 |
 | bur_prev_max_dpd_mean | selected |  | 0.1345 | 0.1345 |  |
 | bur_prev_max_dpd_max | dropped | Multicollinearity clustering | 0.1345 | 0.1345 | correlated with bur_prev_max_dpd_mean (\|corr\|=0.91, IV 0.249 < 0.294) |
-| bur_prev_max_dpd_min | dropped | Stepwise selection | 0.1345 | 0.2371 | not entered: LR p=0.09188 >= 0.01 given the selected features |
+| bur_prev_max_dpd_min | dropped | Multicollinearity clustering | 0.1345 | 0.2371 | \|corr\| with bur_prev_max_dpd_mean = 0.74 >= 0.7 (pairwise check after clustering; IV 0.223 < 0.294) |
 | bur_prev_max_dpd_sum | dropped | Multicollinearity clustering | 0.1345 | 0.1345 | correlated with bur_prev_max_dpd_mean (\|corr\|=0.83, IV 0.249 < 0.294) |

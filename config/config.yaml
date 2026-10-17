@@ -13,6 +13,8 @@ budget:
   # providers whose price is 0 (e.g. Gemini free tier) or the offline provider.
   total_usd: 4.50                 # keep a little headroom under a $5 top-up
   per_project_usd: 1.00
+  # Laras gives a cost range before paid LLM work; above this (upper end) she asks first.
+  ask_above_usd: 0.02
 
 providers:
   claude_haiku:

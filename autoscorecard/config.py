@@ -54,6 +54,7 @@ class AppConfig(BaseModel):
 class BudgetConfig(BaseModel):
     total_usd: float = 4.50
     per_project_usd: float = 1.00
+    ask_above_usd: float = 0.02     # Laras asks the Boss before work that may cost more
 
 
 class ModellingConfig(BaseModel):

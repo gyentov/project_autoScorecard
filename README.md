@@ -7,7 +7,8 @@ and an English presentation deck, while you make the key decisions in chat.
 ## Status
 - **Phase 0 (done):** config, multi-provider LLM layer, budget ledger, project store + audit log, API skeleton
 - **Phase 1 (done):** auditable scorecard engine (pure Python) - see `autoscorecard/engine/`
-- Phase 2: agents + decision checkpoints · Phase 3: deck · Phase 4: game UI · Phase 5: polish
+- **Phase 2a (done):** the office: Laras, Bening and Citra run kickoff → data → target → waterfall plan → Cut 1 → Cut 2 (→ extensions) in visual-novel meetings, with choices plus free typing, proposals that need ACC, MOM emails, honest cost estimates, and an event stream. See [docs/office.md](docs/office.md)
+- Phase 2b: pixel office driven by the real events · Phase 3: decks (Kirana) · Phase 4: game UI · Phase 5: polish
 
 ## Setup
 ```bash
@@ -19,6 +20,7 @@ cp .env.example .env        # add whichever keys you have; missing ones are skip
 
 ## Useful commands
 ```bash
+.venv/bin/python scripts/office_cli.py --demo   # the office in the terminal (demo data)
 .venv/bin/python scripts/llm_smoke.py           # which providers are usable
 .venv/bin/python scripts/llm_smoke.py --call    # one tiny test call per provider
 .venv/bin/uvicorn autoscorecard.server.app:app --reload   # API on :8000, docs at /docs
@@ -63,7 +65,7 @@ autoscorecard/
   llm/               types, providers, router, cost ledger, rate limiter
   store.py           projects/<id>/{raw,work,artifacts,audit.jsonl}
   engine/            Phase 1 – scorecard maths (no LLM)
-  agents/            Phase 2
+  office/            Phase 2a – the team, meetings, inbox, proposals, costs, events
   server/app.py      FastAPI
 config/config.yaml   providers, agent→provider map, budget
 scripts/             smoke tests

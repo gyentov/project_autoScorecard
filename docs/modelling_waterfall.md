@@ -74,6 +74,13 @@ Common reading: < 0.02 useless, 0.02–0.1 weak, 0.1–0.3 medium, 0.3–0.5 str
    at `|corr| >= 0.7`.
 4. Keep the highest-IV feature from each cluster and drop the rest. The reason
    names the kept feature and the correlation.
+5. **Pairwise check.** Average linkage compares cluster averages, so two features
+   in different clusters can still have |corr| ≥ 0.7. The limit is enforced
+   strictly: going from highest to lowest IV, a kept feature that has
+   |corr| ≥ threshold with an already kept one is dropped (reason:
+   `pairwise check after clustering`). Every pair of survivors has
+   |corr| < threshold. Forced features re-enter later, at finalization, where the
+   VIF check applies to them.
 
 The full merge tree is saved in `clusters.json`, so a dendrogram can be drawn.
 

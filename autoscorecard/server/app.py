@@ -1,11 +1,12 @@
 """FastAPI backend: health, provider status, budget, projects, upload, waterfall plan,
-finalization inputs and confirmation.
+finalization inputs and confirmation, and the office (meetings, inbox, events).
 
 Run:  .venv/bin/uvicorn autoscorecard.server.app:app --reload
 """
 from __future__ import annotations
 
 from fastapi import FastAPI, HTTPException, Response, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from autoscorecard import __version__
@@ -16,6 +17,8 @@ from autoscorecard.engine.waterfall import (STEP_TYPES, approve_plan, load_plan,
                                             plan_warnings, save_plan)
 from autoscorecard.engine.waterfall_report import plan_markdown, plan_mermaid, plan_svg
 from autoscorecard.llm import LLMRouter
+from autoscorecard.office import Office
+from autoscorecard.office.timeline import gantt_svg
 from autoscorecard.store import ProjectStore
 
 ALLOWED_EXT = {".csv", ".xlsx", ".xls", ".parquet", ".tsv", ".txt"}
@@ -229,3 +232,128 @@ def import_dictionary(pid: str, body: DictionaryImport):
     d.save(proj)
     proj.audit("user", "dictionary_imported", {"file": body.file, "rows": n})
     return {"imported": n, "entries": d.entries}
+
+
+# --------------------------------------------------------------------------- the office (2a)
+
+_OFFICES: dict[str, Office] = {}
+
+
+def _office(pid: str) -> Office:
+    proj = _project(pid)
+    if pid not in _OFFICES or _OFFICES[pid].project.root != proj.root:
+        _OFFICES[pid] = Office(proj, router, settings)
+    return _OFFICES[pid]
+
+
+class BossSays(BaseModel):
+    text: str
+    meeting_id: str | None = None
+    to: str | None = None          # laras / bening / citra, else routed by keywords
+    cost_ok: bool = False          # the Boss agreed to Laras's estimate
+
+
+class Decision(BaseModel):
+    accept: bool
+
+
+@app.post("/api/projects/{pid}/office/start")
+def office_start(pid: str):
+    return _office(pid).start()
+
+
+@app.get("/api/projects/{pid}/office")
+def office_state(pid: str):
+    o = _office(pid)
+    st = o.state
+    return {"stage": st.stage, "open_meeting": st.open_meeting, "cuts": st.cuts,
+            "timeline": o.timeline.to_list(),
+            "unread": sum(1 for e in o.inbox.list() if not e.read),
+            "pending_proposals": [vars(p) for p in o.proposals.list("pending")],
+            "cost": o.cost_status()}
+
+
+@app.get("/api/projects/{pid}/office/briefing")
+def office_briefing(pid: str):
+    return _office(pid).briefing()
+
+
+@app.get("/api/projects/{pid}/office/events")
+def office_events(pid: str, since: int = 0, limit: int = 500):
+    """Poll with the last seq you have; the 2b office replays these."""
+    return _office(pid).events.since(since, min(limit, 2000))
+
+
+@app.get("/api/projects/{pid}/office/timeline.svg")
+def office_timeline_svg(pid: str):
+    return Response(gantt_svg(_office(pid).timeline), media_type="image/svg+xml")
+
+
+@app.get("/api/projects/{pid}/inbox")
+def inbox_list(pid: str):
+    return [vars(e) for e in _office(pid).inbox.list()]
+
+
+@app.get("/api/projects/{pid}/inbox/{eid}")
+def inbox_read(pid: str, eid: str):
+    try:
+        return vars(_office(pid).inbox.mark_read(eid))
+    except KeyError:
+        raise HTTPException(404, "email not found")
+
+
+@app.get("/api/projects/{pid}/files/{path:path}")
+def project_file(pid: str, path: str):
+    """Attachments and slides. Only files inside the project's artifacts/ and
+    work/meetings/ folders, never raw data."""
+    proj = _project(pid)
+    f = (proj.root / path).resolve()
+    allowed = [(proj.root / "artifacts").resolve(), (proj.root / "work" / "meetings").resolve()]
+    if not any(f.is_relative_to(a) for a in allowed) or not f.is_file():
+        raise HTTPException(404, "file not found")
+    return FileResponse(f)
+
+
+@app.get("/api/projects/{pid}/meetings")
+def meetings_list(pid: str):
+    return [{"id": m.id, "title": m.title, "kind": m.kind, "status": m.status}
+            for m in _office(pid).meetings.list()]
+
+
+@app.get("/api/projects/{pid}/meetings/{mid}")
+def meeting_get(pid: str, mid: str):
+    try:
+        return vars(_office(pid).meetings.get(mid))
+    except KeyError:
+        raise HTTPException(404, "meeting not found")
+
+
+@app.post("/api/projects/{pid}/meetings/{mid}/choose/{cid}")
+def meeting_choose(pid: str, mid: str, cid: str):
+    try:
+        return _office(pid).choose(mid, cid)
+    except KeyError:
+        raise HTTPException(404, "meeting or choice not found")
+    except (ValueError, PermissionError) as e:
+        raise HTTPException(409, str(e))
+
+
+@app.post("/api/projects/{pid}/office/say")
+def office_say(pid: str, body: BossSays):
+    """Free typing, in a meeting (meeting_id) or at an agent's desk."""
+    try:
+        return _office(pid).say(body.text, body.meeting_id, body.to, body.cost_ok)
+    except KeyError:
+        raise HTTPException(404, "meeting not found")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/projects/{pid}/proposals/{prop}")
+def proposal_decide(pid: str, prop: str, body: Decision):
+    try:
+        return _office(pid).decide_proposal(prop, body.accept)
+    except KeyError:
+        raise HTTPException(404, "proposal not found")
+    except ValueError as e:
+        raise HTTPException(409, str(e))

@@ -169,7 +169,7 @@ def test_anthropic_adapter_parses_response():
     def create(**kw):
         captured.update(kw)
         return SimpleNamespace(
-            content=[SimpleNamespace(type="text", text="Siap Bos."),
+            content=[SimpleNamespace(type="text", text="Siap Boss."),
                      SimpleNamespace(type="tool_use", id="t1", name="profile", input={"a": 1})],
             stop_reason="tool_use",
             usage=SimpleNamespace(input_tokens=10, output_tokens=5,

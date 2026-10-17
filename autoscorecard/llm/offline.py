@@ -11,7 +11,7 @@ from autoscorecard.llm.base import Provider
 from autoscorecard.llm.types import LLMRequest, LLMResponse, Usage
 
 OFFLINE_NOTICE = {
-    "id": "(Mode offline: semua kuota LLM habis. Saya lanjut pakai rekomendasi default, Bos.)",
+    "id": "(Mode offline: semua kuota LLM habis. Saya lanjut pakai rekomendasi default, Boss.)",
     "en": "(Offline mode: all LLM quota is used up. Continuing with default recommendations.)",
 }
 

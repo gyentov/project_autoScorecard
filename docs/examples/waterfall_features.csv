@@ -19,5 +19,5 @@ bur_prev_amount_min,0.1345156889495225,0.1345156889495225,0.006305170239596469,,
 bur_prev_amount_sum,0.1345156889495225,0.1345156889495225,0.0037831021437578815,,dropped,Information Value,IV 0.0136 <= 0.02
 bur_prev_max_dpd_mean,0.1345156889495225,0.1345156889495225,0.1021437578814628,,selected,,
 bur_prev_max_dpd_max,0.1345156889495225,0.1345156889495225,0.12295081967213115,,dropped,Multicollinearity clustering,"correlated with bur_prev_max_dpd_mean (|corr|=0.91, IV 0.249 < 0.294)"
-bur_prev_max_dpd_min,0.1345156889495225,0.23710777626193724,0.2739596469104666,0.0,dropped,Stepwise selection,not entered: LR p=0.09188 >= 0.01 given the selected features
+bur_prev_max_dpd_min,0.1345156889495225,0.23710777626193724,0.2739596469104666,0.0,dropped,Multicollinearity clustering,|corr| with bur_prev_max_dpd_mean = 0.74 >= 0.7 (pairwise check after clustering; IV 0.223 < 0.294)
 bur_prev_max_dpd_sum,0.1345156889495225,0.1345156889495225,0.09583858764186633,,dropped,Multicollinearity clustering,"correlated with bur_prev_max_dpd_mean (|corr|=0.83, IV 0.249 < 0.294)"
