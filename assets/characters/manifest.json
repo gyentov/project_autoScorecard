@@ -1,0 +1,101 @@
+{
+  "size": [
+    600,
+    900
+  ],
+  "poses": [
+    "neutral",
+    "explaining",
+    "presenting",
+    "thinking",
+    "tablet",
+    "bowing",
+    "cheering",
+    "arms_crossed"
+  ],
+  "moods": [
+    "neutral",
+    "happy",
+    "proud",
+    "thinking",
+    "worried",
+    "apologetic",
+    "excited",
+    "serious",
+    "surprised"
+  ],
+  "files": {
+    "bening": [
+      "bening/arms_crossed_neutral.png",
+      "bening/bowing_neutral.png",
+      "bening/cheering_neutral.png",
+      "bening/explaining_neutral.png",
+      "bening/neutral_apologetic.png",
+      "bening/neutral_excited.png",
+      "bening/neutral_happy.png",
+      "bening/neutral_neutral.png",
+      "bening/neutral_proud.png",
+      "bening/neutral_serious.png",
+      "bening/neutral_surprised.png",
+      "bening/neutral_thinking.png",
+      "bening/neutral_worried.png",
+      "bening/presenting_neutral.png",
+      "bening/tablet_neutral.png",
+      "bening/thinking_neutral.png"
+    ],
+    "citra": [
+      "citra/arms_crossed_neutral.png",
+      "citra/bowing_neutral.png",
+      "citra/cheering_neutral.png",
+      "citra/explaining_neutral.png",
+      "citra/neutral_apologetic.png",
+      "citra/neutral_excited.png",
+      "citra/neutral_happy.png",
+      "citra/neutral_neutral.png",
+      "citra/neutral_proud.png",
+      "citra/neutral_serious.png",
+      "citra/neutral_surprised.png",
+      "citra/neutral_thinking.png",
+      "citra/neutral_worried.png",
+      "citra/presenting_neutral.png",
+      "citra/tablet_neutral.png",
+      "citra/thinking_neutral.png"
+    ],
+    "kirana": [
+      "kirana/arms_crossed_neutral.png",
+      "kirana/bowing_neutral.png",
+      "kirana/cheering_neutral.png",
+      "kirana/explaining_neutral.png",
+      "kirana/neutral_apologetic.png",
+      "kirana/neutral_excited.png",
+      "kirana/neutral_happy.png",
+      "kirana/neutral_neutral.png",
+      "kirana/neutral_proud.png",
+      "kirana/neutral_serious.png",
+      "kirana/neutral_surprised.png",
+      "kirana/neutral_thinking.png",
+      "kirana/neutral_worried.png",
+      "kirana/presenting_neutral.png",
+      "kirana/tablet_neutral.png",
+      "kirana/thinking_neutral.png"
+    ],
+    "laras": [
+      "laras/arms_crossed_neutral.png",
+      "laras/bowing_neutral.png",
+      "laras/cheering_neutral.png",
+      "laras/explaining_neutral.png",
+      "laras/neutral_apologetic.png",
+      "laras/neutral_excited.png",
+      "laras/neutral_happy.png",
+      "laras/neutral_neutral.png",
+      "laras/neutral_proud.png",
+      "laras/neutral_serious.png",
+      "laras/neutral_surprised.png",
+      "laras/neutral_thinking.png",
+      "laras/neutral_worried.png",
+      "laras/presenting_neutral.png",
+      "laras/tablet_neutral.png",
+      "laras/thinking_neutral.png"
+    ]
+  }
+}
