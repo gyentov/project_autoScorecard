@@ -63,6 +63,10 @@ class ModellingConfig(BaseModel):
     waterfall: list[dict] | None = None   # None = engine default (DEFAULT_WATERFALL)
     outliers: dict = Field(default_factory=lambda: {"method": "iqr", "k": 1.5,
                                                     "treatment": "none"})
+    # hyperparameter tuning of the final cut (see engine/tuning.py)
+    tuning: dict = Field(default_factory=lambda: {
+        "enabled": True, "val_size": 0.25, "max_gap": 0.05,
+        "grid": {"min_bin_pct": [0.03, 0.05, 0.08], "max_bins": [5, 8], "p_enter": [0.01, 0.05]}})
 
     @model_validator(mode="after")
     def _check_waterfall(self) -> "ModellingConfig":

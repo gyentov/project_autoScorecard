@@ -25,6 +25,7 @@ from .dictionary import DataDictionary, OutlierRule, dictionary_markdown, treat_
 from .finalization import load_inputs, validate_inputs, write_pending
 from .scorecard import Scaling, Scorecard
 from .selection import vif
+from .tuning import TuningResult, tune, with_params
 from .waterfall import (DEFAULT_WATERFALL, Step, WaterfallResult, load_plan, parse_steps,
                         run_waterfall)
 from .waterfall_report import (correlation_heatmap_svg, finalization_markdown, plan_markdown,
@@ -61,6 +62,9 @@ class ScorecardConfig:
     forced_features: list[str] = field(default_factory=list)
     reasons: dict[str, str] = field(default_factory=dict)
     exclude: list[str] = field(default_factory=list)
+    # hyperparameter tuning before the waterfall (the final model): None = off, else
+    # {"grid": {...}, "val_size": 0.25, "max_gap": 0.05}; see tuning.py
+    tune: dict | None = None
 
 
 @dataclass
@@ -76,6 +80,7 @@ class BuildResult:
     data_dictionary: pd.DataFrame = field(default_factory=pd.DataFrame)
     raw_corr: pd.DataFrame = field(default_factory=pd.DataFrame)   # Spearman, reference
     outlier_rule: OutlierRule = field(default_factory=OutlierRule)
+    tuning: TuningResult | None = None
 
     @property
     def iv_table(self) -> pd.DataFrame:
@@ -158,6 +163,15 @@ def build_scorecard(df: pd.DataFrame, y: pd.Series, features: list[str],
     # 3. waterfall on the training sample (binning happens inside, monotonic)
     bin_kw = dict(n_init=cfg.n_init, min_bin_pct=cfg.min_bin_pct, max_bins=cfg.max_bins,
                   monotonic=cfg.monotonic, rare_pct=cfg.rare_pct)
+    tuned = None
+    if cfg.tune is not None:                  # on the training sample only; test/OOT untouched
+        t = cfg.tune
+        tuned = tune(Xtr, ytr, features, steps, bin_kw, inputs, t.get("grid"),
+                     t.get("val_size", 0.25), cfg.seed, t.get("max_gap", 0.05), log=log)
+        bin_kw.update({k: tuned.best[k] for k in ("min_bin_pct", "max_bins") if k in tuned.best})
+        steps = with_params(steps, tuned.best.get("p_enter"))
+        log("tuning", {"best": tuned.best, "default": tuned.default, "trials": len(tuned.table),
+                       "n_fit": tuned.n_fit, "n_val": tuned.n_val}, tuned.rule)
     wf = run_waterfall(Xtr, ytr, features, steps, bin_kw, inputs["manual_bins"], log,
                        forced=inputs["forced_features"], woe_overrides=inputs["woe_overrides"],
                        edit_reasons=inputs["reasons"])
@@ -191,7 +205,8 @@ def build_scorecard(df: pd.DataFrame, y: pd.Series, features: list[str],
     num_sel = [f for f in wf.selected if is_numeric(raw[f])]
     raw_corr = Xtr[num_sel].corr(method="spearman") if num_sel else pd.DataFrame()
 
-    res = BuildResult(sc, wf, perf, psi, v, splits, build_id, inputs, ddict, raw_corr, rule)
+    res = BuildResult(sc, wf, perf, psi, v, splits, build_id, inputs, ddict, raw_corr, rule,
+                      tuned)
     if project is not None:
         _save_artifacts(project, res)
         if snapshot:
@@ -243,6 +258,13 @@ def _save_artifacts(project, res: BuildResult) -> None:
         (out / "clusters.json").write_text(json.dumps(
             {"clusters": wf.clusters.clusters, "representatives": wf.clusters.representatives,
              "linkage": wf.clusters.linkage}, indent=2, default=float), encoding="utf-8")
+    tpath = out / "tuning.json"
+    if res.tuning is not None:
+        tpath.write_text(json.dumps(res.tuning.to_dict(), indent=2, default=float), encoding="utf-8")
+        res.tuning.table.to_csv(out / "tuning.csv", index=False)
+    else:                                     # a later build without tuning: no stale result
+        tpath.unlink(missing_ok=True)
+        (out / "tuning.csv").unlink(missing_ok=True)
     (out / "performance.json").write_text(json.dumps(
         {"performance": res.performance, "score_psi": res.score_psi}, indent=2, default=float),
         encoding="utf-8")

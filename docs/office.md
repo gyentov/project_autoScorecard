@@ -59,14 +59,59 @@ The result, `artifacts/kamus_variabel_bening.md` (tables and variables), goes to
 Boss's inbox, fills empty descriptions in the data dictionary, and is handed to Citra
 with the dataset; the plan meeting shows it.
 
+**Laras reviews every version** (`office/dictreview.py`, $0): a meaning that is empty, only
+repeats the name, is an untranslated bank description, a low-confidence guess not marked
+as one, a derived variable without its formula, or an unknown table blocks it. Bening fixes
+what Laras found (an LLM read when there is one, else an honest "perlu konfirmasi" mark)
+and Laras checks again, up to three rounds; her memo lists what was found and fixed. Only
+an approved version (`work/variable_meanings_approved.json`) is documentation: the model
+documentation, the deck, Citra's report and `fitur_terpilih.html` read only that. Every
+teammate can read it with the `dictionary` tool.
+
+**Meanings change with the discussion.** "arti el = exposure limit" (or Bening's
+`update_meaning` tool) records the new meaning for a variable or a table, keeps the old one
+in its history, and sends the new version to Laras's review. Meanings settled this way
+survive when Bening works the dictionary out again.
+
+**Derived variables, at any time** (`office/derived.py`). "variabel baru dti =
+loan_amount / cust_income" ($0), or Bening's `propose_derived_variable` tool: ratio,
+difference, sum, product, log, flag (a comparison) or a missing flag. Bening shows a
+preview on the training sample (IV, strength, missing rate); after the Boss's ACC the
+variable is added to the dataset every time it is loaded, joins the dictionary (meaning =
+its formula, reviewed by Laras), and is a candidate in the next cut (also after Cut 1).
+
 ## Citra's report at every cut
 
-Each results meeting adds: **Kontribusi skor** (each variable's point range and its share
-of the total), **Binning per variabel** (bins, share of accounts, bad rate, WoE and
-points, with Bening's meaning), and **Pembagian risiko** (`engine/risk.py`: the train
-score cut into 20 equal-population bands; any band under 5% of accounts is merged into
-its smaller neighbour; score range and bad rate for train, test and OOT; a check that bad
-rate falls as score rises). Files: `score_contribution.csv`, `risk_bands.csv`.
+**Every results meeting presents Kirana's deck for that cut** on the projector (the
+consulting format below, English), saved as `artifacts/<cut>/deck_<cut>.html` and attached
+to the results email. The projector has two tabs: **Deck** (the prepared slides, ‹ › to
+browse) and **Papan** (what the Boss asks to see during the meeting, plus working material
+such as the WoE correlation, the join and the timeline). A query never goes into the deck.
+
+Citra reads every model variable **bin by bin** (each bin's share of accounts, bad rate,
+risk index = bin bad rate ÷ portfolio bad rate, WoE and points; the riskiest and safest
+bin, thin bins, the trend and where it breaks), one line per variable on its deck slide.
+
+**Score bands: from 20 to the ideal number** (`engine/risk.py`). The train score is cut
+into 20 equal-population bands (any under 5% of accounts merged first); then the two
+neighbouring bands that are least different are merged one at a time (a reversal first,
+else the highest two-proportion p-value), recording every step. The ideal number is the
+largest where the bad rate falls band after band in train, test and OOT, every
+neighbouring pair differs significantly (p < 0.05) and every band holds at least 5% of
+accounts. The **KS** of the banded score is recorded at each step, and a KS table per band
+(cumulative bads and goods) is made for every sample. The VL–VH levels are built from the
+ideal bands (with fewer than five bands, the levels still span VH to VL). Files:
+`risk_bands_20.csv`, `band_path.csv`, `risk_bands.csv` (ideal), `ks_table.csv`,
+`band_choice.json`, `score_contribution.csv`.
+
+**Hyperparameter tuning when the model is finalised** (`engine/tuning.py`, config
+`modelling.tuning`). On the final cut only, the training sample is split again (75% fit,
+25% validation; test and OOT never used to choose) and every combination of the smallest
+bin, the most bins and the stepwise / forward entry p-value re-runs the approved
+waterfall. Chosen: the best validation Gini after a penalty for a fit–validation gap above
+0.05; near-ties go to fewer variables, then to the planned settings. The final model uses
+the chosen settings; the deck and the documentation show every combination
+(`tuning.json`, `tuning.csv`).
 
 In the final cut Citra proposes **VL, L, M, H, VH**: contiguous groups of bands from the
 lowest scores (VH) up, about a fifth of accounts each, and says she wants to discuss it.
@@ -121,6 +166,16 @@ band's level; the order must run VH → VL. Citra repeats the result in the meet
   added. Milestones decided by meetings (kickoff, data, target, waterfall plan, cuts)
   cannot be closed by hand; she says why. Every change puts the new Gantt on the board
   (the projector, in a meeting) and is audited.
+- **Timeline instructions are done, not promised.** "Tandai kamus dan deck selesai di
+  timeline" or "kenapa timeline masih menunggu Boss, kan sudah done" changes the
+  milestones at once by rule ($0; named milestones, else the ones waiting for the Boss),
+  shows the new Gantt and closes the matching open order. Any agent who says "saya update
+  sekarang" without calling a tool is sent back once to call it or say honestly why not.
+- **Turns in meetings.** In a coordination or casual meeting every attendee answers the
+  Boss in turn (each hears what the others just said); naming one person asks only her.
+  In stage meetings the host answers unless the Boss asks the others ("yang lain juga",
+  "masing-masing", "gantian") or names several. Nobody can call a second meeting from
+  inside one, and only the Boss closes it. At the desks Laras stays the coordinator.
 - **Meetings on request.** "Yuk meeting" makes Laras call a coordination meeting (topic,
   attendees, the timeline, and the deck draft when the topic is the deck); the Boss closes
   it with "Selesai", and their directions go through the MOM as usual.
@@ -131,9 +186,14 @@ band's level; the order must run VH → VL. Citra repeats the result in the meet
 ## Deliverables
 
 `office/deliverables.py`, from the confirmed (else latest) cut: the **model
-documentation** (Indonesian, HTML: summary, data and join, target and vintage, variable
-dictionary, waterfall, scorecard points, contribution, risk bands and levels, decisions,
-the Boss's orders) and Kirana's **deck draft** (English, 16:9 HTML slides). Both are made
+documentation** (`office/report.py`: an Indonesian report in the style of a bank or
+consulting model report, one HTML file that prints to A4: cover, contents, executive
+summary with key figures and a recommendation, then numbered chapters on data, bad
+definition and vintage, the approved dictionary, the development process, tuning,
+performance, every variable bin by bin, score bands 20 → ideal with the KS table, VL–VH
+levels with illustrative policy, decisions and the audit trail, and a methodology
+appendix; numbered figures and tables with sources, and "Arti bagi bisnis" at the end of
+each chapter) and Kirana's **deck draft** (English, 16:9 HTML slides). Both are made
 when the final model is confirmed, or on request, and mailed with the file; the deck
 waits for the Boss's review before a PDF / PPTX export (not built yet).
 
@@ -314,6 +374,10 @@ calls, tool results counted, no cache discount (so the top is conservative).
 
 - Free or offline providers: she says it's $0.
 - Upper end above `budget.ask_above_usd` (default $0.02): she asks first.
+  The Boss can click Yes or type "ya"/"ok" (the waiting question then runs); a typed
+  complaint about the cost gets a free explanation. One yes holds for 30 minutes for
+  questions up to twice that estimate, so she does not ask before every message.
+  Status questions ("update #3"), thanks and praise are answered for $0.
 - Over the remaining budget: she holds the question.
 
 Afterwards she reports the actual cost and whether it fell inside the range.
@@ -458,6 +522,17 @@ work.
 
 The front end is plain files in `autoscorecard/server/static/` (Phaser 3 from a CDN,
 no build step).
+
+## Code layout
+
+`office/workflow.py` defines `Office` as a composition of mixins, one per domain, in
+`office/flow/`: `data` (dataset, summaries for the tools), `handover` (the Boss's actions,
+data handover, messages), `relays` (orders dispatched, relays, ad hoc meetings),
+`conversation` (what the Boss types, the free rule-based replies, meeting turns),
+`stages` (kickoff, data, target, vintage), `deliverables_orders`, `dictionary` (versions,
+review, meanings, derived variables), `plan` (waterfall plan), `cuts` (builds, results
+meeting) and `score_report` (contribution, bands, KS, risk levels); `flow/common.py` holds
+the shared helpers. A new domain is a new mixin added to `Office`'s bases.
 
 ## API
 

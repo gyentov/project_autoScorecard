@@ -94,3 +94,16 @@ modelling:
   # method: iqr (Tukey fences, k x IQR) or percentile (lower/upper); treatment: none or cap.
   # "none" is the default: WoE end bins are open-ended, so extremes cannot pull the model.
   outliers: {method: iqr, k: 1.5, treatment: none}
+
+  # Hyperparameter tuning when the model is finalised (the final cut). Every combination
+  # runs the approved waterfall on 75% of the training sample and is scored on the other
+  # 25%; test and OOT are never used to choose. Picked: best validation Gini after a
+  # penalty for a fit-validation gap above max_gap; near-ties go to fewer variables.
+  tuning:
+    enabled: true
+    val_size: 0.25
+    max_gap: 0.05
+    grid:
+      min_bin_pct: [0.03, 0.05, 0.08]   # smallest bin, share of accounts
+      max_bins: [5, 8]                  # most bins per variable
+      p_enter: [0.01, 0.05]             # stepwise / forward entry significance

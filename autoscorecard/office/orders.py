@@ -33,8 +33,13 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+# "buat apa" (what for?): a question that only looks like an order
+NOT_ORDER = re.compile(r"\b(?:buat|bikin)\s+apa\b", re.I)
+
+
 def is_order(text: str) -> bool:
-    return bool(IMPERATIVE.search(text)) and not text.strip().endswith("?")
+    return bool(IMPERATIVE.search(text)) and not text.strip().endswith("?") \
+        and not NOT_ORDER.search(text)
 
 
 class Orders:

@@ -139,6 +139,12 @@ SMALL_TALK: list[tuple[str, str, dict[str, list[tuple[str, str]]]]] = [
         "bening": [("happy", "Sama-sama, Boss! Hehe.")],
         "citra": [("proud", "Sama-sama. Angkanya juga berterima kasih, Boss.")],
         "kirana": [("excited", "Yay, sama-sama Boss!")]}),
+    ("praise", r"^(good job|great job|nice|mantap\w*|keren|top|kerja bagus|bagus|well done|"
+               r"hebat|good)[\s!.👍👏]*$", {
+        "laras": [("happy", "Terima kasih, Boss. Saya sampaikan ke tim juga.")],
+        "bening": [("happy", "Hehe, makasih Boss! Jadi makin semangat.")],
+        "citra": [("proud", "Terima kasih, Boss. Angkanya memang mendukung.")],
+        "kirana": [("excited", "Yay! Makasih Boss!")]}),
     ("how", r"^(apa kabar|gimana kabar|how are you|kabar\b)", {
         "laras": [("neutral", "Baik, Boss. Saya AI, jadi tidak pernah capek, tapi senang "
                               "proyeknya jalan rapi.")],

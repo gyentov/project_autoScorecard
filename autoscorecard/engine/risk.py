@@ -83,10 +83,12 @@ def is_monotonic(rates: list[float | None]) -> list[int]:
 
 def propose_levels(table: pd.DataFrame) -> list[str]:
     """A level per band, contiguous from VH (lowest scores) to VL, each about a fifth of
-    the accounts. With fewer than 5 bands, fewer levels."""
+    the accounts. With fewer than 5 bands, fewer levels that still span both ends
+    (3 bands: VH, M, VL)."""
     n = len(table)
     k = min(len(LEVELS), n)
-    names = LEVELS if k == 5 else LEVELS[:k]
+    names = {5: LEVELS, 4: ("VH", "H", "L", "VL"), 3: ("VH", "M", "VL"), 2: ("VH", "VL"),
+             1: ("M",)}[k]
     cum = table["cum_pct"].to_numpy()
     out, lvl = [], 0
     for i in range(n):
@@ -127,3 +129,86 @@ def level_table(table: pd.DataFrame, levels: list[str]) -> pd.DataFrame:
                 row[c] = float((g[c].fillna(0) * w).sum() / w.sum()) if w.sum() else None
         rows.append(row)
     return pd.DataFrame(rows)
+
+
+# --------------------------------------------------------------------------- the ideal bands
+def _counts(score: pd.Series, y: pd.Series, cuts: list[float]) -> pd.DataFrame:
+    b = assign(score, cuts)
+    k = len(cuts) + 1
+    g = pd.DataFrame({"b": b, "y": np.asarray(y, dtype=int)}).groupby("b")["y"].agg(["size", "sum"])
+    g = g.reindex(range(1, k + 1), fill_value=0)
+    return pd.DataFrame({"n": g["size"].to_numpy(), "bads": g["sum"].to_numpy()},
+                        index=pd.RangeIndex(1, k + 1, name="band"))
+
+
+def _p_diff(n1, b1, n2, b2) -> float:
+    """Two-sided p-value that two bands have the same bad rate (two-proportion z-test)."""
+    from .logistic import norm_sf
+    if min(n1, n2) == 0:
+        return 1.0
+    p = (b1 + b2) / (n1 + n2)
+    se = np.sqrt(p * (1 - p) * (1 / n1 + 1 / n2))
+    if se == 0:
+        return 1.0
+    return float(2 * norm_sf(abs(b1 / n1 - b2 / n2) / se))
+
+
+def ks_table(score: pd.Series, y: pd.Series, cuts: list[float]) -> pd.DataFrame:
+    """Per band, riskiest (band 1, lowest scores) first: accounts, bads, goods, bad rate,
+    cumulative share of bads and goods, and the KS at the band's upper boundary."""
+    c = _counts(score, y, cuts)
+    t = c.assign(goods=c.n - c.bads)
+    t["bad_rate"] = t.bads / t.n.where(t.n > 0)
+    t["cum_bads"] = t.bads.cumsum() / max(t.bads.sum(), 1)
+    t["cum_goods"] = t.goods.cumsum() / max(t.goods.sum(), 1)
+    t["ks"] = t.cum_bads - t.cum_goods
+    return t.reset_index()
+
+
+def banded_ks(score, y, cuts) -> float:
+    return float(ks_table(score, y, cuts)["ks"].max())
+
+
+def optimise_bands(samples: dict[str, tuple[pd.Series, pd.Series]], cuts: list[float],
+                   alpha: float = 0.05, min_pct: float = 0.05, base: str = "train") -> dict:
+    """From the starting bands (20, small ones already merged) down to two: each step merges
+    the two neighbouring bands that are least different on `base` (a reversal, a higher
+    band riskier than the one below, is merged first; else the highest p-value). Every
+    step is recorded. The ideal number of bands is the largest one where the bad rate falls
+    band after band in every sample, every neighbouring pair differs significantly on
+    `base` (p < alpha) and every band holds at least `min_pct` of accounts. KS of the
+    banded score is recorded at each step: how much separation each grouping keeps."""
+    s0, y0 = samples[base]
+    cuts = list(cuts)
+    path = []
+    while True:
+        c = _counts(s0, y0, cuts)
+        rate = (c.bads / c.n.where(c.n > 0)).to_numpy()
+        ps = [_p_diff(c.n.iloc[i], c.bads.iloc[i], c.n.iloc[i + 1], c.bads.iloc[i + 1])
+              for i in range(len(c) - 1)]
+        rev = {name: len(is_monotonic(list((_counts(s, y, cuts).pipe(
+            lambda t: t.bads / t.n.where(t.n > 0))).to_numpy())))
+            for name, (s, y) in samples.items()}
+        path.append({"bands": len(cuts) + 1, "cuts": list(cuts),
+                     "ks": round(banded_ks(s0, y0, cuts), 4),
+                     **{f"ks_{n}": round(banded_ks(*samples[n], cuts), 4) for n in samples if n != base},
+                     "max_p": round(max(ps), 4) if ps else 0.0,
+                     "min_pct": round(float(c.n.min() / c.n.sum()), 4),
+                     **{f"reversals_{n}": v for n, v in rev.items()}})
+        if len(cuts) <= 1:
+            break
+        worst = [i for i in range(len(rate) - 1) if rate[i + 1] > rate[i]]   # reversals first
+        i = worst[0] if worst else int(np.argmax(ps))
+        cuts.pop(i)                                  # removes the boundary between i and i+1
+    ok = [p for p in path if all(p[f"reversals_{n}"] == 0 for n in samples)
+          and p["max_p"] < alpha and p["min_pct"] >= min_pct]
+    if not ok:                                       # nothing passes everything: base sample only
+        ok = [p for p in path if p[f"reversals_{base}"] == 0 and p["max_p"] < alpha] or path[-1:]
+    best = max(ok, key=lambda p: p["bands"])
+    for p in path:
+        p["chosen"] = p is best
+    rule = (f"jumlah kelompok terbanyak yang bad rate-nya turun konsisten di semua sampel, "
+            f"setiap pasangan bersebelahan berbeda nyata (p < {alpha}) dan setiap kelompok "
+            f"minimal {min_pct:.0%} akun")
+    return {"cuts": best["cuts"], "bands": best["bands"], "path": path, "rule": rule,
+            "start": path[0]["bands"]}

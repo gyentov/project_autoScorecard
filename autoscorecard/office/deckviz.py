@@ -92,7 +92,8 @@ def lines(series: list[dict], xmax: int, ymax: float | None = None, w: int = 660
         v = k * step
         out.append(f'<line x1="{L}" x2="{w - R}" y1="{sy(v):.1f}" y2="{sy(v):.1f}" stroke="{RULE}"/>')
         out.append(_text(L - 8, sy(v) + 4, f"{v:.0%}", 11, MUTED, "end"))
-    for m in range(3, xmax + 1, 3):
+    tick = 1 if xmax <= 12 else 3
+    for m in range(tick, xmax + 1, tick):
         out.append(_text(sx(m), h - B + 18, m, 11, MUTED, "middle"))
     if xlabel:
         out.append(_text((L + w - R) / 2, h - 2, xlabel, 11, MUTED, "middle"))

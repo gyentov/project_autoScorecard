@@ -73,15 +73,14 @@ def gini_word(g: float) -> str:
 
 
 # --------------------------------------------------------------------------- the facts
-def facts(office) -> dict:
+def facts(office, cut: str | None = None) -> dict:
     from .deliverables import _cut, _read
     st = office.state
-    cut = _cut(office)
+    cut = cut or _cut(office)
     proj = office.project
     art = proj.dir("artifacts") / cut
     work = proj.dir("work")
-    vm = json.loads((work / "variable_meanings.json").read_text(encoding="utf-8")) \
-        if (work / "variable_meanings.json").exists() else []
+    vm = office.approved_meanings()               # the dictionary Laras approved
     curves = pd.read_csv(work / "vintage_curves.csv") if (work / "vintage_curves.csv").exists() else None
     levels = _read(art, "risk_levels.csv")
     if levels is None and st.cuts[cut].get("bands"):       # Citra's proposal, not yet agreed
@@ -103,7 +102,85 @@ def facts(office) -> dict:
         "table": _read(art, "scorecard_table.csv"), "curves": curves,
         "meanings": {r["variabel"]: r for r in vm}, "scaling": sc.get("scaling", {}),
         "build": st.cuts[cut].get("build_id", ""),
+        "tuning": _read(art, "tuning.json"),
+        "band_path": _read(art, "band_path.csv"), "ks_table": _read(art, "ks_table.csv"),
+        "band_choice": _read(art, "band_choice.json"),
     }
+
+
+HP_NAME = {"min_bin_pct": "smallest bin", "max_bins": "max bins", "p_enter": "entry p-value"}
+
+
+def hp_name(k: str) -> str:
+    return HP_NAME.get(k, k)
+
+
+def hp_value(k: str, v) -> str:
+    if v is None:
+        return "-"
+    return {"min_bin_pct": f"{v:.0%}", "max_bins": str(v), "p_enter": f"{v:g}"}.get(k, str(v))
+
+
+def hp_label(k: str, v) -> str:
+    if v is None:
+        return "-"
+    return {"min_bin_pct": f"min bin {v:.0%}", "max_bins": f"≤{v} bins",
+            "p_enter": f"p<{v:g}"}.get(k, str(v))
+
+
+def bin_analysis(f: dict) -> dict:
+    """Per variable in the score: every bin's share, bad rate, risk index (bin bad rate over
+    the portfolio's), points and a one-word read, plus the pattern, the thin bins and the
+    so-what. Shared by the deck and Citra's lines in the cut meeting."""
+    tbl, contrib = f["table"], f["contrib"]
+    avg = (f["perf"].get("train") or {}).get("bad_rate") or float(tbl.bad_rate.mean())
+    order = list(contrib["variabel"]) if contrib is not None else list(dict.fromkeys(tbl.feature))
+    from ..engine.binning import iv_strength
+    span = tbl.groupby("feature").points.agg(lambda p: p.max() - p.min())
+    ranges = float(span[span.index.isin(order)].sum())
+    out = {}
+    for var in order:
+        g = tbl[tbl.feature == var]
+        if g.empty:
+            continue
+        bins = []
+        for r in g.itertuples():
+            idx = r.bad_rate / avg if avg else 0.0
+            read = ("much riskier" if idx >= 1.5 else "riskier" if idx >= 1.1 else
+                    "much safer" if idx <= 0.67 else "safer" if idx <= 0.9 else "average")
+            bins.append({"bin": r.bin, "label": pretty_bin(r.bin), "pct": float(r.pct),
+                         "bad_rate": float(r.bad_rate), "index": idx, "points": int(r.points),
+                         "woe": float(r.woe), "read": read})
+        worst = min(bins, key=lambda b: (b["points"], -b["bad_rate"]))
+        best = max(bins, key=lambda b: (b["points"], -b["bad_rate"]))
+        real = [b for b in bins if "missing" not in b["label"].lower()]
+        numeric = all(re.match(r"^[\(\[]", str(b["bin"])) or "issing" in str(b["bin"]) for b in bins)
+        br = [b["bad_rate"] for b in real]
+        up = all(a <= c for a, c in zip(br, br[1:]))
+        down = all(a >= c for a, c in zip(br, br[1:]))
+        breaks = [] if (up or down) else [real[k + 1]["label"] for k in range(len(br) - 2)
+                                          if (br[k + 1] - br[k]) * (br[k + 2] - br[k + 1]) < 0]
+        m = f["meanings"].get(var, {})
+        bad = g.pct * g.bad_rate                         # IV from the bins themselves
+        good = g.pct * (1 - g.bad_rate)
+        iv = float(((good / good.sum() - bad / bad.sum()) * g.woe).sum()) if bad.sum() > 0 else 0.0
+        share = (g.points.max() - g.points.min()) / ranges if ranges else 0.0
+        spread = worst["bad_rate"] / max(best["bad_rate"], 1e-9)
+        thin = [b["label"] for b in bins if b["pct"] < 0.05]
+        direction = ("risk rises with the value" if up and numeric and len(real) > 1 and br[-1] > br[0]
+                     else "risk falls as the value rises" if down and numeric and len(real) > 1 else "")
+        so_what = (f"{direction[0].upper() + direction[1:]}; " if direction else "") + (
+            f"an applicant in the riskiest bin gives up {best['points'] - worst['points']} points "
+            "against the safest, so this variable alone can move a borderline decision"
+            if share >= 0.15 else
+            f"a supporting variable: {best['points'] - worst['points']} points between its riskiest "
+            "and safest bins")
+        out[var] = {"bins": bins, "worst": worst, "best": best, "monotonic": up or down,
+                    "numeric": numeric, "breaks": breaks, "thin": thin, "iv": iv,
+                    "strength": iv_strength(iv), "share": share, "spread": spread,
+                    "direction": direction, "so_what": so_what,
+                    "doubt": "noise" in str(m.get("arti", "")).lower() or m.get("keyakinan") == "rendah"}
+    return out
 
 
 # --------------------------------------------------------------------------- slides
@@ -152,10 +229,13 @@ table.t{border-collapse:collapse;font-size:13px;width:100%} .t th{color:var(--mu
 class Deck:
     def __init__(self, f: dict):
         self.f, self.slides, self.n = f, [], 0
+        self.meta: list[dict] = []          # per slide: tracker, action title, variable
 
-    def add(self, tracker: str, action: str, body: str, lede: str = "", source: str = "") -> None:
+    def add(self, tracker: str, action: str, body: str, lede: str = "", source: str = "",
+            var: str | None = None) -> None:
         self.n += 1
         src = source or f"Source: AutoScorecard build {self.f['build']} ({self.f['cut'].replace('cut', 'Cut ')})"
+        self.meta.append({"tracker": tracker, "action": action, "var": var})
         self.slides.append(
             f"<section class='slide'><div class='tracker'>{esc(tracker)}</div><h2 class='action'>{esc(action)}</h2>"
             + (f"<p class='lede'>{esc(lede)}</p>" if lede else "<div class='rule'></div>")
@@ -173,8 +253,9 @@ def two(chart: str, side: str, chart_title: str = "", even: bool = False) -> str
             f"<div class='side'>{side}</div></div>")
 
 
-def build(office) -> dict:
-    f = facts(office)
+def build(office, cut: str | None = None) -> dict:
+    """The deck for `cut` (default: the confirmed, else the latest built cut)."""
+    f = facts(office, cut)
     t, perf, info = f["target"], f["perf"], f["info"]
     vin = t.get("vintage")
     feats = info.get("features", [])
@@ -191,6 +272,7 @@ def build(office) -> dict:
     top3 = contrib.head(3) if contrib is not None else None
 
     # ---- cover
+    d.meta.append({"tracker": "Cover", "action": f["name"], "var": None})
     d.slides.append(
         f"<section class='slide cover'><div class='bar'></div><h1>Application scorecard: "
         f"{esc(f['name'])}</h1><div class='sub'>Bad definition, model development and recommended "
@@ -199,6 +281,7 @@ def build(office) -> dict:
 
     # ---- executive summary
     msgs = []
+    psi_ = f["psi"].get("oot", f["psi"].get("test", 0)) or 0
     if vin:
         msgs.append((f"{vin['bad_rate']:.0%}", "Bad = ever 90+ DPD within 18 months" if (vin["threshold"], vin["window"]) == (90, 18)
                      else f"Bad = ever {vin['threshold']}+ DPD within {vin['window']} months",
@@ -207,8 +290,9 @@ def build(office) -> dict:
     if oot:
         msgs.append((f"{oot['gini']:.2f}", f"Out-of-time Gini: {gini_word(oot['gini'])} discrimination",
                      f"{len(feats)} variables; Gini {train.get('gini', 0):.2f} in development and "
-                     f"{oot['gini']:.2f} out of time, with score PSI {f['psi'].get('oot', f['psi'].get('test', 0)):.2f} "
-                     "(stable population)."))
+                     f"{oot['gini']:.2f} out of time, with score PSI {psi_:.2f} "
+                     + ("(stable population)." if psi_ < 0.1 else "(moderate population shift)." if psi_ < 0.25
+                        else "(material population shift: recalibrate cut-offs before go-live).")))
     if top3 is not None:
         msgs.append((f"{top3['kontribusi'].sum():.0%}", "of the score range comes from three drivers",
                      ", ".join(names.get(v, v) for v in top3["variabel"]) + "."))
@@ -231,6 +315,10 @@ def build(office) -> dict:
                "add stronger data (e.g. full bureau history) before relying on it alone.")
     doubtful = [v for v in feats if "noise" in str(f["meanings"].get(v, {}).get("arti", "")).lower()
                 or f["meanings"].get(v, {}).get("keyakinan") == "rendah"]
+    if psi_ >= 0.25:
+        title = title.replace(" and holds out of time", ", but the population it scores has shifted")
+        rec += (f" The score distribution has shifted (PSI {psi_:.2f}): recalibrate the cut-offs on "
+                "recent applications before go-live.")
     if doubtful:
         rec += (f" Before go-live, remove {', '.join(names.get(v, v) for v in doubtful)}: "
                 + ("it has" if len(doubtful) == 1 else "they have") + " no clear business meaning.")
@@ -384,9 +472,12 @@ def build(office) -> dict:
         order = {"Train": 0, "Test": 1, "OOT": 2}
         items.sort(key=lambda x: order.get(x[0], 9))
         drop = train.get("gini", 0) - oot.get("gini", 0)
+        psi = f["psi"].get("oot", f["psi"].get("test", 0)) or 0
+        shift = ("a stable score distribution" if psi < 0.1 else "a moderate shift in the score "
+                 "distribution" if psi < 0.25 else "a material shift in the score distribution")
         d.add("Model performance", f"Out-of-time discrimination is {gini_word(oot.get('gini', 0))} "
-              f"(Gini {oot.get('gini', 0):.2f}) with a stable score distribution (PSI "
-              f"{f['psi'].get('oot', f['psi'].get('test', 0)):.2f})",
+              f"(Gini {oot.get('gini', 0):.2f}), " + ("with " if psi < 0.25 else "but with ")
+              + f"{shift} (PSI {psi:.2f})",
               two(V.vbars(items, fmt=lambda v: f"{v:.2f}",
                           colors=[V.ACCENT if lab == "OOT" else V.GREY for lab, _ in items], h=300,
                           sub=[f"KS {perf[k.lower()]['ks']:.2f}" for k, _ in items]),
@@ -395,12 +486,54 @@ def build(office) -> dict:
                   + ("within the usual range for application scorecards." if drop < 0.1 else "worth monitoring.")
                   + (f" The test sample is weaker still ({perf['test']['gini']:.2f}), so part of the development "
                      "Gini is over-fit." if perf.get("test", {}).get("gini", 1) < oot.get("gini", 0) else "")
-                  + "</p><p><b>Stability.</b> A PSI below 0.10 means the score distribution has not shifted.</p>"
-                  + ("<div class='sowhat'><b>So what:</b> the score can be used for decisions now, with routine "
+                  + "</p><p><b>Stability.</b> "
+                  + ("A PSI below 0.10 means the score distribution has not shifted.</p>" if psi < 0.1 else
+                     f"PSI {psi:.2f}: the recent applicants score differently from development (below 0.10 is "
+                     "stable, above 0.25 is material); the ranking still holds, but cut-offs set on development "
+                     "data will not give the same approval rates.</p>")
+                  + ("<div class='sowhat alert'><b>So what:</b> before go-live, find what moved the population "
+                     "(product, channel or macro inputs) and recalibrate the cut-offs on recent data.</div>"
+                     if psi >= 0.25 else
+                     "<div class='sowhat'><b>So what:</b> the score can be used for decisions now, with routine "
                      "quarterly monitoring.</div>" if oot.get("gini", 0) >= 0.3 else
                      "<div class='sowhat'><b>So what:</b> the ranking is real but modest; pair the score with "
                      "policy rules and look for stronger predictors before the next rebuild.</div>"),
                   "Gini by sample (KS below)"))
+
+    # ---- hyperparameter tuning (the final cut)
+    tu = f["tuning"]
+    if tu and tu.get("table"):
+        rows_t = tu["table"]
+        keys = [k for k in ("min_bin_pct", "max_bins", "p_enter") if k in tu["best"]]
+        lab = lambda r: " · ".join(hp_label(k, r[k]) for k in keys)          # noqa: E731
+        ranked = sorted(rows_t, key=lambda r: -r["objective"])
+        items = [(lab(r), r["gini_val"]) for r in ranked]
+        focus = {k for k, r in enumerate(ranked) if r.get("chosen")}
+        dflt = next((k for k, r in enumerate(ranked) if r.get("is_default")), None)
+        ch = next(r for r in ranked if r.get("chosen"))
+        df_ = ranked[dflt] if dflt is not None else None
+        changed = [f"the {hp_name(k)} from {hp_value(k, tu['default'].get(k))} to {hp_value(k, tu['best'][k])}"
+                   for k in keys if tu["default"].get(k) != tu["best"][k]]
+        d.add("Hyperparameter tuning",
+              (f"Tuning {len(rows_t)} settings on a validation slice "
+               + ("kept the planned settings" if not changed else "changed " + " and ".join(changed))
+               + f": validation Gini {ch['gini_val']:.3f} with {ch['n_features']} variables"),
+              two(V.hbars(items[:12], fmt=lambda v: f"{v:.3f}", focus=focus, label_w=300,
+                          note={dflt: "planned"} if dflt is not None and dflt not in focus else None),
+                  f"<p><b>How.</b> The training sample was split again: {tu['n_fit']:,} accounts to fit, "
+                  f"{tu['n_val']:,} to validate. Each setting re-ran the approved waterfall; test and "
+                  "out-of-time samples were never used to choose, so their results stay an honest "
+                  "read.</p><p><b>Rule.</b> Highest validation Gini after a penalty for over-fitting "
+                  "(fit vs validation gap above 0.05); near-ties go to fewer variables.</p>"
+                  + (f"<p><b>Versus the plan.</b> Planned settings scored {df_['gini_val']:.3f} with "
+                     f"{df_['n_features']} variables (gap {df_['gap']:.3f}); chosen {ch['gini_val']:.3f} with "
+                     f"{ch['n_features']} (gap {ch['gap']:.3f}).</p>" if df_ is not None and not df_.get("chosen") else "")
+                  + "<div class='sowhat'><b>So what:</b> "
+                  + ("the planned settings were already the best; the model keeps them." if not changed else
+                     "the final model uses the tuned settings; the differences are small, which shows the "
+                     "model is not sensitive to these choices.") + "</div>",
+                  "Validation Gini by setting (chosen in colour)"),
+              lede="Binning and selection settings were tuned once, when the model was finalised.")
 
     # ---- drivers
     if contrib is not None:
@@ -416,6 +549,63 @@ def build(office) -> dict:
                   "show, bin by bin, why each one earns its points.</div>",
                   "Share of the total score range"))
 
+    # ---- from 20 bands to the ideal number, and the KS it keeps
+    bp, bc = f["band_path"], f["band_choice"]
+    if bp is not None and bc:
+        k = int(bc["bands"])
+        items = [(str(int(r.bands)), r.ks) for r in bp.itertuples()]
+        chosen = {i for i, r in enumerate(bp.itertuples()) if r.chosen}
+        rev_cols = [c for c in bp.columns if c.startswith("reversals_")]
+        show = bp[bp.bands.isin({int(bp.bands.max()), k + 1, k, max(k - 1, 2), 5})].drop_duplicates("bands")
+        rows = [{"bands": f"{int(r['bands'])}" + (" ✓" if r["chosen"] else ""),
+                 "KS train": f"{r['ks']:.3f}",
+                 **{f"KS {c[3:]}": f"{r[c]:.3f}" for c in bp.columns if c.startswith("ks_")},
+                 "worst p": f"{r['max_p']:.3f}",
+                 "reversals": str(int(sum(r[c] for c in rev_cols)))} for r in show.to_dict("records")]
+        ksm = bc["ks_model"].get("train", 0)
+        d.add("Score band selection",
+              f"Twenty equal bands merged step by step to {k}: the most that stay monotonic and "
+              f"statistically distinct, keeping a KS of {bc['ks_banded'].get('train', 0):.2f} of the "
+              f"model's {ksm:.2f}",
+              two(V.vbars(items, fmt=lambda v: f"{v:.2f}", h=290,
+                          colors=[V.ACCENT if i in chosen else V.GREY for i in range(len(items))],
+                          sub=["✓" if i in chosen else "" for i in range(len(items))]),
+                  "<p><b>How.</b> Start from twenty equal-population bands"
+                  + (f" ({int(bp.bands.max())} once bands under 5% of accounts are merged)"
+                     if int(bp.bands.max()) < 20 else "") + "; at each step merge the two "
+                  "neighbouring bands that are least different (a reversal first, else the pair with the "
+                  "highest p-value).</p><p><b>Rule.</b> Keep the largest number of bands where the bad "
+                  "rate falls band after band in train, test and out-of-time, every neighbouring pair "
+                  "differs significantly (p &lt; 0.05) and every band holds at least 5% of accounts.</p>"
+                  + table_html(rows, list(rows[0]), num=set(rows[0]) - {"bands"})
+                  + f"<div class='sowhat'><b>So what:</b> {k} bands is as fine as the data can support; "
+                  "more bands would split groups whose risk is not truly different.</div>",
+                  "KS of the banded score by number of bands (chosen in colour)"))
+
+    kt = f["ks_table"]
+    if kt is not None and bc:
+        tr = kt[kt["sample"] == "train"].reset_index(drop=True)
+        series = [{"name": "Cumulative bads", "x": list(tr.band), "y": list(tr.cum_bads), "focus": True},
+                  {"name": "Cumulative goods", "x": list(tr.band), "y": list(tr.cum_goods)}]
+        top = tr.loc[tr.ks.idxmax()]
+        ks_by = {s_: float(g.ks.max()) for s_, g in kt.groupby("sample")}
+        rows = [{"band": int(r.band), "accounts": f"{int(r.n):,}", "bad rate": f"{r.bad_rate:.1%}",
+                 "cum. bads": f"{r.cum_bads:.0%}", "cum. goods": f"{r.cum_goods:.0%}",
+                 "KS": f"{r.ks:.3f}"} for r in tr.itertuples()]
+        d.add("KS by score band",
+              f"The score separates bads from goods by up to {top.ks:.0%} (KS), reached at band "
+              f"{int(top.band)} of {len(tr)}" + (f"; {ks_by['oot']:.2f} out of time" if "oot" in ks_by else ""),
+              two(V.lines(series, xmax=len(tr), ymax=1.0, xlabel="score band (1 = riskiest)",
+                          marker=(float(top.band), f"KS {top.ks:.2f}"), h=300),
+                  table_html(rows, ["band", "accounts", "bad rate", "cum. bads", "cum. goods", "KS"],
+                             num={"accounts", "bad rate", "cum. bads", "cum. goods", "KS"})
+                  + "<div class='sowhat'><b>So what:</b> declining the riskiest bands up to band "
+                  f"{int(top.band)} would remove {top.cum_bads:.0%} of bads at the cost of "
+                  f"{top.cum_goods:.0%} of goods.</div>",
+                  "Cumulative share of bads and goods by band (development)"),
+              source=f"Source: KS table, development sample · KS by sample: "
+                     + ", ".join(f"{k_} {v:.2f}" for k_, v in ks_by.items()))
+
     # ---- recommended score bands
     if bands is not None:
         from ..engine.risk import is_monotonic
@@ -423,13 +613,12 @@ def build(office) -> dict:
         items = [(str(int(r.band)), r.bad_rate_train) for r in bands.itertuples()]
         sub = [f"{r.score_min:.0f}+" for r in bands.itertuples()]
         b0, bn = bands.iloc[0], bands.iloc[-1]
-        merged = 20 - len(bands)
         d.add("Recommended score binning", f"Bad rate falls from {b0.bad_rate_train:.0%} in the lowest "
               f"score band to {bn.bad_rate_train:.1%} in the highest across {len(bands)} bands",
               two(V.vbars(items, flag=rev, h=310, sub=sub),
-                  f"<p><b>Construction.</b> Twenty equal-population bands on the development sample; "
-                  + (f"{merged} band{'s' if merged > 1 else ''} under 5% of accounts merged into a neighbour, "
-                     if merged else "") + "so every band is large enough to trust.</p>"
+                  f"<p><b>Construction.</b> The {len(bands)} bands chosen on the previous slides, from "
+                  "twenty equal-population bands; every band holds at least 5% of accounts and differs "
+                  "significantly from its neighbours.</p>"
                   + (f"<p><b>Watch point.</b> Band{'s' if len(rev) > 1 else ''} "
                      f"{', '.join(str(k + 1) for k in sorted(rev))} break{'s' if len(rev) == 1 else ''} the trend "
                      "slightly; grouping into risk levels absorbs this noise.</p>" if rev else
@@ -461,47 +650,46 @@ def build(office) -> dict:
                      "agreed with credit policy before go-live.</div>"),
                   "Bad rate by risk level (score range below)"))
 
-    # ---- one slide per variable: every bin and its points
+    # ---- one slide per variable: every bin, its points and what each bin says
     tbl = f["table"]
-    if tbl is not None:
-        for var in (contrib["variabel"] if contrib is not None else feats):
-            g = tbl[tbl.feature == var]
-            if g.empty:
-                continue
-            g = g.assign(label=[pretty_bin(b) for b in g.bin])
-            worst, best = g.loc[g.points.idxmin()], g.loc[g.points.idxmax()]
-            items = [(r.label, r.bad_rate) for r in g.itertuples()]
-            low = {k for k, r in enumerate(g.itertuples()) if r.points == worst.points}
-            share = float(contrib.set_index("variabel").loc[var, "kontribusi"]) if contrib is not None else 0
-            m = f["meanings"].get(var, {})
-            br = [r.bad_rate for r in g.itertuples() if "missing" not in r.label.lower()]
-            mono = all(a >= b for a, b in zip(br, br[1:])) or all(a <= b for a, b in zip(br, br[1:]))
-            num_bins = all(re.match(r"^[\(\[]", str(b)) or "issing" in str(b) for b in g.bin)
-            rows = [{"bin": r.label, "accounts": f"{r.pct:.0%}", "bad rate": f"{r.bad_rate:.1%}",
-                     "WoE": f"{r.woe:+.2f}", "points": int(r.points)} for r in g.itertuples()]
-            doubt = "noise" in str(m.get("arti", "")).lower() or m.get("keyakinan") == "rendah"
-            english = m.get("asli") or (m.get("arti") if str(m.get("dasar", "")).startswith("kamus data bank") else "")
-            d.add("Scorecard by variable", f"{names.get(var, var)}: from {int(worst.points)} points "
-                  f"({worst.label}, {worst.bad_rate:.0%} bad) to {int(best.points)} points "
-                  f"({best.label}, {best.bad_rate:.1%} bad)",
-                  two(V.vbars(items, colors=[V.ALERT if k in low else V.GREY for k in range(len(items))], h=250,
-                              sub=[f"{int(r.points)} pts" for r in g.itertuples()])
-                      + table_html(rows, ["bin", "accounts", "bad rate", "WoE", "points"],
-                                   num={"accounts", "bad rate", "WoE", "points"}),
-                      f"<p><b>What it is.</b> {esc(english or names.get(var, var))}"
-                      + ("" if english else " (meaning inferred by the team; no bank description)") + ".</p>"
-                      f"<p><b>Weight.</b> {share:.0%} of the score range across {len(g)} bins"
-                      + ("; the bad rate moves one way across the ranges, as required for a defensible "
-                         "points pattern.</p>" if mono and num_bins else
-                         "; categories are ordered by their bad rate.</p>" if not num_bins else
-                         "; the bad rate is not strictly one-directional, worth a check at the next rebuild.</p>")
-                      + ("<div class='sowhat alert'><b>Flag:</b> this variable has no clear business meaning. "
-                         "A variable that cannot be explained should not drive credit decisions; we recommend "
-                         "removing it (force-drop in the waterfall) and rebuilding.</div>" if doubt else "")
-                      + "<p><b>Points.</b> WoE is the log-odds of good vs bad in the bin relative to the whole "
-                      "sample; points are the WoE times the coefficient, scaled. Higher points, lower risk.</p>",
-                      "Bad rate by bin (points below)", even=False),
-                  source=f"Source: scorecard table, development sample · variable {var}")
+    avg = train.get("bad_rate") or None
+    for var, an in (bin_analysis(f) if tbl is not None else {}).items():
+        g, m = an["bins"], f["meanings"].get(var, {})
+        worst, best = an["worst"], an["best"]
+        items = [(r["label"], r["bad_rate"]) for r in g]
+        low = {k for k, r in enumerate(g) if r["points"] == worst["points"]}
+        rows = [{"bin": r["label"], "accounts": f"{r['pct']:.0%}", "bad rate": f"{r['bad_rate']:.1%}",
+                 "risk index": f"{r['index']:.1f}×" if avg else "-", "points": r["points"],
+                 "read": r["read"]} for r in g]
+        english = m.get("asli") or (m.get("arti") if str(m.get("dasar", "")).startswith("kamus data bank") else "")
+        pattern = ("the bad rate moves one way across the ranges, as a defensible points pattern requires"
+                   if an["monotonic"] and an["numeric"] else "categories are ordered by their bad rate"
+                   if not an["numeric"] else
+                   f"the trend breaks at {', '.join(an['breaks'])}; worth a check at the next rebuild")
+        d.add("Scorecard by variable", f"{names.get(var, var)}: from {worst['points']} points "
+              f"({worst['label']}, {worst['bad_rate']:.0%} bad) to {best['points']} points "
+              f"({best['label']}, {best['bad_rate']:.1%} bad)",
+              two(V.vbars(items, colors=[V.ALERT if k in low else V.GREY for k in range(len(items))], h=210,
+                          sub=[f"{r['points']} pts" for r in g])
+                  + table_html(rows, ["bin", "accounts", "bad rate", "risk index", "points", "read"],
+                               num={"accounts", "bad rate", "risk index", "points"}),
+                  f"<p><b>What it is.</b> {esc(english or names.get(var, var))}"
+                  + ("" if english else " (meaning inferred by the team; no bank description)") + ".</p>"
+                  f"<p><b>Weight.</b> {an['share']:.0%} of the score range; IV {an['iv']:.2f} "
+                  f"({an['strength']}); {pattern}.</p>"
+                  f"<p><b>Bin by bin.</b> The riskiest bin ({esc(worst['label'])}, {worst['pct']:.0%} of "
+                  f"applicants) runs at {worst['index']:.1f}× the average bad rate; the safest "
+                  f"({esc(best['label'])}, {best['pct']:.0%}) at {best['index']:.1f}×: a "
+                  f"{an['spread']:.0f}-fold spread.</p>"
+                  + (f"<p><b>Thin bins.</b> {', '.join(esc(b) for b in an['thin'])} hold under 5% of "
+                     "applicants each; their points rest on few accounts.</p>" if an["thin"] else "")
+                  + ("<div class='sowhat alert'><b>Flag:</b> this variable has no clear business meaning. "
+                     "A variable that cannot be explained should not drive credit decisions; we recommend "
+                     "removing it (force-drop in the waterfall) and rebuilding.</div>" if an["doubt"] else
+                     f"<div class='sowhat'><b>So what:</b> {esc(an['so_what'])}</div>"),
+                  "Bad rate by bin (points below)"),
+              source=f"Source: scorecard table, development sample · variable {var} · risk index = bin bad "
+                     "rate ÷ portfolio bad rate", var=var)
 
     # ---- appendix
     d.add("Appendix: methodology", "Definitions and conventions used throughout",
@@ -519,7 +707,20 @@ def build(office) -> dict:
               "<p><b>Reproducibility.</b> Build, waterfall report, finalization review and the variable "
               "dictionary are attached to the results emails and can be regenerated from the logged "
               "inputs.</p>", "Glossary"))
-    return {"html": d.html(), "slides": len(d.slides)}
+    return {"html": d.html(), "slides": len(d.slides), "cut": f["cut"],
+            "pages": [{**m, "html": page(sec, m["action"])} for m, sec in zip(d.meta, d.slides)]}
+
+
+def page(section: str, title: str) -> str:
+    """One slide as its own page for the projector: the 16:9 slide scaled to the screen."""
+    return (f"<!doctype html><html lang='en'><head><meta charset='utf-8'><title>{esc(title)}</title>"
+            f"<style>{CSS}html,body{{margin:0;height:100%;overflow:hidden;background:#fff}}"
+            ".slide{margin:0;box-shadow:none;transform-origin:0 0;position:absolute;left:0;top:0}"
+            "</style></head><body>" + section +
+            "<script>function fit(){var s=document.querySelector('.slide'),k=Math.min(innerWidth/1280,"
+            "innerHeight/720);s.style.transform='scale('+k+')';s.style.left=((innerWidth-1280*k)/2)+'px';"
+            "s.style.top=((innerHeight-720*k)/2)+'px'}addEventListener('resize',fit);fit()</script>"
+            "</body></html>")
 
 
 def table_html(rows: list[dict], cols: list[str], raw: bool = False, num: set[str] | None = None) -> str:

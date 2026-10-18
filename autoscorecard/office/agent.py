@@ -111,6 +111,13 @@ _AGG_NAME = {"bad rate": "bad_rate", "jumlah": "count", "count": "count", "rata-
              "mean": "mean", "median": "median", "missing": "missing_rate",
              "missing rate": "missing_rate"}
 
+# "variabel baru dti = loan_amount / cust_income", "turunkan log_inc = log(cust_income)"
+_DERIVE = re.compile(r"^(?:bening[,:]?\s+)?(?:variabel\s+baru|buat\s+variabel|tambah\w*\s+variabel|"
+                     r"turunkan(?:\s+variabel)?|derive)\s*:?\s*(\w+\s*=.+)$", re.I)
+# "arti el = exposure limit", "arti tabel bureau: riwayat SLIK"
+_MEANING = re.compile(r"^(?:bening[,:]?\s+)?arti\s+(?:variabel\s+|tabel\s+)?([\w.]+)\s*(?:=|:|adalah)\s*(.{3,})$",
+                      re.I)
+
 _CMDS = [
     (re.compile(r"^(?:force|paksa)\s+(\S+)\s*$", re.I), "force_feature"),
     (re.compile(r"^(?:unforce|batal\s*paksa)\s+(\S+)\s*$", re.I), "unforce_feature"),
@@ -140,7 +147,7 @@ class AgentReply:
                 "mood": self.mood, "proposals": self.proposals, "estimate": self.estimate,
                 "actual": self.actual, "offline": self.offline,
                 "needs_cost_ok": self.needs_cost_ok,
-                "board": [{"title": b["title"], "file": b["file"], "slide": b["slide"]}
+                "board": [{"title": b["title"], "file": b["file"], "board": b["board"]}
                           for b in self.board]}
 
 
@@ -191,6 +198,10 @@ class AgentRuntime:
         shown = self.show_command(body, agent, meeting_id)
         if shown is not None:
             return shown
+        if m := _DERIVE.match(body):                   # "variabel baru dti = a / b" ($0)
+            return self._derive_command(m.group(1))
+        if m := _MEANING.match(body):                  # "arti el = exposure limit" ($0)
+            return self._meaning_command(m.group(1), m.group(2))
         for rx, kind in _CMDS:
             m = rx.match(body)
             if not m:
@@ -211,6 +222,35 @@ class AgentRuntime:
                               "Berlaku di cut berikutnya setelah Boss ACC.", "serious", [p.id],
                               kind="command")
         return None
+
+    def _derive_command(self, expr: str) -> AgentReply:
+        from . import derived as DV
+        spec = DV.parse(expr)
+        if spec is None:
+            return AgentReply("bening", "Rumusnya belum saya pahami, Boss. Contoh: \"variabel baru "
+                              "dti = loan_amount / cust_income\", \"log_inc = log(cust_income)\", "
+                              "\"tua = cust_age >= 50\".", "apologetic", kind="command")
+        try:
+            r = self.office.propose_derived(spec, "bening", "instruksi Boss")
+        except (ValueError, KeyError, FileNotFoundError) as e:
+            return AgentReply("bening", f"Belum bisa, Boss: {e}.", "apologetic", kind="command")
+        pv = r["preview"]
+        return AgentReply("bening", f"Siap, Boss. Usulan: {r['summary']}. Pratinjau di data train: "
+                          + (f"IV {pv['iv']:.3f} ({pv['strength']}), " if "iv" in pv else "")
+                          + f"missing {pv['missing_rate']:.0%}. Setelah Boss ACC, variabelnya masuk "
+                          "dataset dan kamus (direview Laras), dan jadi kandidat di cut berikutnya.",
+                          "happy", [r["proposal_id"]], kind="command")
+
+    def _meaning_command(self, name: str, arti: str) -> AgentReply:
+        try:
+            r = self.office.update_meaning(name.strip(), arti.strip(), reason="arahan Boss")
+        except (ValueError, KeyError) as e:
+            return AgentReply("bening", f"Belum bisa, Boss: {e}.", "apologetic", kind="command")
+        return AgentReply("bening", f"Siap, Boss. Arti {r['updated']} {name} sekarang: "
+                          f"\"{arti.strip()}\". Laras sudah mereview: "
+                          + ("lolos, kamus terbaru dipakai di dokumentasi dan bisa dibaca semua tim."
+                             if r["review"] == "approved" else "belum lolos; saya perbaiki dulu."),
+                          "happy" if r["review"] == "approved" else "worried", kind="command")
 
     # ------------------------------------------------------------- after a meeting
     MOM_PROMPT = (
@@ -350,10 +390,25 @@ class AgentRuntime:
     def working_line(agent: str) -> str:
         return random.choice(WORKING[agent])
 
+    # "langsung saya perbaiki", "saya update sekarang": a promise to act in this turn
+    PROMISE = re.compile(
+        r"\b(?:langsung|segera|sekarang)\s+(?:saya\s+)?(?:perbaiki|update|ubah|ganti|tandai|"
+        r"kerjakan|buat|kirim|tutup|tambah|hapus|jalankan|proses)|"
+        r"\bsaya\s+(?:akan\s+|segera\s+|langsung\s+)?(?:perbaiki|update|ubah|ganti|tandai|"
+        r"tutup|tambah|hapus|jalankan)\b|\bakan\s+saya\s+(?:perbaiki|update|ubah|ganti|tandai|"
+        r"tutup|tambah|hapus|kerjakan|buat|kirim)", re.I)
+    FOLLOW_THROUGH = ("(Catatan sistem: kamu bilang akan melakukannya, tapi belum memanggil tool "
+                      "apa pun, jadi belum ada yang berubah. Panggil tool-nya SEKARANG. Kalau "
+                      "tidak ada tool untuk itu atau tool menolak, katakan jujur ke Boss.)")
+
+    def promises(self, text: str) -> bool:
+        return bool(self.PROMISE.search(split_reply(text)[1]))
+
     def respond(self, text: str, to: str | None = None, context: str = "",
                 history: list[dict] | None = None, cost_ok: bool = False,
                 default: str = "laras", meeting_id: str | None = None,
-                present: list[str] | None = None, consult: bool = True) -> AgentReply:
+                present: list[str] | None = None, consult: bool = True,
+                ask_above: float | None = None) -> AgentReply:
         agent = self.who(text, to, default, present)
         cmd = self.command(text, agent, meeting_id)
         if cmd is not None:
@@ -366,7 +421,8 @@ class AgentRuntime:
         notes = office.messages_for(agent)
         if notes:                                  # the Boss's orders she must not forget
             context += ("\nPerintah/pesan Boss untukmu yang BELUM selesai (jangan diabaikan: "
-                        "kerjakan dengan tool, atau laporkan statusnya dengan update_order):\n"
+                        "kerjakan dengan tool, atau laporkan statusnya dengan update_order; kalau kamu "
+                        "membuat alur untuknya, isi for_order di plan_relay):\n"
                         + "\n".join(f"- #{n['id']} [{n['status']}] {n['text']}" for n in notes))
         system = system_prompt(TEAM[agent], context)
         msgs = [Message.user(h["text"]) if h["role"] == "boss" else Message.assistant(h["text"])
@@ -382,7 +438,8 @@ class AgentRuntime:
         if not est.affordable:
             return AgentReply("laras", est.say() + " Saya tahan dulu pertanyaan ini, Boss.",
                               "worried", estimate=est.to_dict(), kind="held")
-        if est.high_usd > office.settings.budget.ask_above_usd and not cost_ok:
+        limit = max(office.settings.budget.ask_above_usd, ask_above or 0.0)
+        if est.high_usd > limit and not cost_ok:
             office.events.emit("cost_estimate", "laras", **est.to_dict(), question=text[:200])
             return AgentReply("laras", est.say() + " Lanjut, Boss?", "serious",
                               estimate=est.to_dict(), needs_cost_ok=True, kind="ask")
@@ -390,8 +447,10 @@ class AgentRuntime:
         office.events.emit("agent_status", agent, status="working", task="menjawab Boss")
         total, reply_text, provider = 0.0, "", ""
         try:
-            for k in range(3):
-                last = k == 2
+            k, limit, nudged = 0, 3, False
+            while k < limit:
+                last = k == limit - 1
+                k += 1
                 resp = office.router.complete(LLMRequest(
                     system, msgs, [] if last else box.specs(), max_tokens=500,
                     agent=AGENT_KEY[agent], project_id=office.project.id))
@@ -401,6 +460,11 @@ class AgentRuntime:
                     return AgentReply(agent, line("offline"), "apologetic", box.created,
                                       offline=True, kind="offline")
                 if not resp.tool_calls:
+                    if not nudged and not last and self.promises(resp.text) and not box.acted():
+                        nudged, limit = True, limit + 1      # said "saya update" but called nothing
+                        msgs.append(resp.as_message())
+                        msgs.append(Message.user(self.FOLLOW_THROUGH))
+                        continue
                     reply_text = resp.text
                     break
                 msgs.append(resp.as_message())

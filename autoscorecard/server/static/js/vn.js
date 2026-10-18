@@ -74,10 +74,10 @@ export async function onWork(ev) {
       && d.task && d.task !== "menjawab Boss" && !W.steps.includes(d.task)) {
     W.steps.push(d.task);
   } else if (ev.type === "board") {                // show it NOW, before she finishes talking
-    if (W.where === "vn" && VN.open && d.meeting_id === VN.meeting.id && d.slide !== null) {
+    if (W.where === "vn" && VN.open && d.meeting_id === VN.meeting.id && d.board !== null
+        && d.board !== undefined) {
       await refresh();
-      VN.slide = null;
-      showSlide(d.slide);
+      showBoard(d.board);
     } else if (W.where === "desk" && !d.meeting_id) {
       DLG.onBoard?.([{ file: d.file }]);
     }
@@ -135,19 +135,49 @@ function showChar(who, pose, mood) {
   c.img.classList.add("talk");
 }
 
+// The projector has two tabs: the prepared deck, and the board (what the Boss asked to
+// see during the meeting). Board items never go into the deck.
+function render(item, label, force) {
+  const url = fileUrl(item.file) + (force ? `?v=${Date.now()}` : "");  // rebuilt slides reload
+  $("vn-slide-title").textContent = label;
+  $("vn-slide").innerHTML = item.file.endsWith(".svg")
+    ? `<img src="${url}" alt="${escapeHtml(item.title)}">`
+    : `<iframe src="${url}" title="${escapeHtml(item.title)}"></iframe>`;
+}
+
+function setTab(tab) {
+  VN.tab = tab;
+  $("vn-tab-deck").classList.toggle("on", tab === "deck");
+  $("vn-tab-board").classList.toggle("on", tab === "board");
+  if (tab === "board") $("vn-tab-board").classList.remove("fresh");
+  const n = (VN.meeting?.board || []).length;
+  $("vn-tab-board").textContent = n ? `📋 Papan (${n})` : "📋 Papan";
+}
+
 function showSlide(k, force = false) {
   const s = VN.meeting.slides[k];
-  if (!s || (VN.slide === k && !force)) return;
+  if (!s || (VN.tab === "deck" && VN.slide === k && !force)) return;
   VN.slide = k;
-  $("vn-slide-title").textContent = `📽 ${k + 1}/${VN.meeting.slides.length} · ${s.title}`;
-  const url = fileUrl(s.file) + (force ? `?v=${Date.now()}` : "");    // rebuilt slides reload
-  $("vn-slide").innerHTML = s.file.endsWith(".svg")
-    ? `<img src="${url}" alt="${escapeHtml(s.title)}">`
-    : `<iframe src="${url}" title="${escapeHtml(s.title)}"></iframe>`;
+  setTab("deck");
+  render(s, `${k + 1}/${VN.meeting.slides.length} · ${s.title}`, force);
+}
+
+function showBoard(k, force = false) {
+  const b = (VN.meeting.board || [])[k];
+  if (!b) return;
+  VN.boardK = k;
+  setTab("board");
+  render(b, `Papan ${k + 1}/${VN.meeting.board.length} · ${b.title}`, force);
+}
+
+function step(d) {                               // ‹ › within the tab on screen
+  if (VN.tab === "board") showBoard(Math.max(0, Math.min((VN.meeting.board || []).length - 1, (VN.boardK ?? 0) + d)));
+  else showSlide(Math.max(0, Math.min(VN.meeting.slides.length - 1, (VN.slide ?? 0) + d)));
 }
 
 async function playLine(ln) {
-  if (ln.slide !== null && ln.slide !== undefined) showSlide(ln.slide);
+  if (ln.board !== null && ln.board !== undefined) showBoard(ln.board);
+  else if (ln.slide !== null && ln.slide !== undefined) showSlide(ln.slide);
   nametag($("vn-name"), ln.speaker);
   if (ln.speaker === "boss") {
     layoutCast(null);
@@ -198,9 +228,11 @@ export async function vnAfterPlanEdit() {
   await refresh();
   const last = VN.meeting.transcript[VN.meeting.transcript.length - 1];
   if (last && last.who !== "boss") {
-    await playAll([{ speaker: last.who, mood: last.mood, text: last.text, slide: last.slide }]);
+    await playAll([{ speaker: last.who, mood: last.mood, text: last.text, slide: last.slide,
+      board: last.board }]);
   }
-  if (last?.slide !== null && last?.slide !== undefined) showSlide(last.slide, true);
+  if (last?.board !== null && last?.board !== undefined) showBoard(last.board, true);
+  else if (last?.slide !== null && last?.slide !== undefined) showSlide(last.slide, true);
   renderChoices();
 }
 
@@ -243,8 +275,9 @@ async function sendText(text, costOk = false) {
   }
   stopWaiting(W);
   if (r.board?.length) await refresh();             // the new slides are on the projector
-  await playAll([{ speaker: r.agent, mood: r.mood, text: r.text,
-    slide: r.board?.length ? r.board[r.board.length - 1].slide : null }]);
+  const line = (x) => ({ speaker: x.agent, mood: x.mood, text: x.text,
+    board: x.board?.length ? x.board[x.board.length - 1].board : null });
+  await playAll([line(r), ...(r.more || []).map(line)]);   // everyone's turn, in order
   if (r.needs_cost_ok) {                    // Laras asks before paid work above the limit
     const box = $("vn-choices");
     box.innerHTML = "";
@@ -257,7 +290,8 @@ async function sendText(text, costOk = false) {
     box.append(yes, no);
     return;
   }
-  if (r.actual && r.actual.actual > 0) toast(`Laras: biaya jawaban $${r.actual.actual.toFixed(4)}`);
+  const usd = [r, ...(r.more || [])].reduce((t, x) => t + ((x.actual && x.actual.actual) || 0), 0);
+  if (usd > 0) toast(`Laras: biaya jawaban $${usd.toFixed(4)}`);
   await refresh();
   VN.onChange?.();
   renderChoices();
@@ -267,14 +301,17 @@ export async function openVN(meetingId) {
   if (VN.open) return;
   VN.open = true;
   VN.slide = null;
+  VN.boardK = null;
   VN.meeting = await api(P(`/meetings/${meetingId}`));
+  setTab("deck");
   const m = VN.meeting;
   $("vn").classList.remove("hidden");
   $("vn-title").textContent = `Rapat: ${m.title}`;
   setupCast(m);
   $("vn-slide").innerHTML = "";
   $("vn-choices").innerHTML = "";
-  const history = m.transcript.map((t) => ({ speaker: t.who, mood: t.mood, text: t.text, slide: t.slide }));
+  const history = m.transcript.map((t) => ({ speaker: t.who, mood: t.mood, text: t.text, slide: t.slide,
+    board: t.board }));
   await playAll([...m.script, ...history]);
   renderChoices();
 }
@@ -288,6 +325,14 @@ export function closeVN() {
 }
 
 export function setupVN() {
+  $("vn-tab-deck").onclick = (e) => { e.stopPropagation(); showSlide(VN.slide ?? 0, true); };
+  $("vn-tab-board").onclick = (e) => {
+    e.stopPropagation();
+    const n = (VN.meeting?.board || []).length;
+    if (n) showBoard(VN.boardK ?? n - 1, true);
+  };
+  $("vn-prev").onclick = (e) => { e.stopPropagation(); step(-1); };
+  $("vn-next-slide").onclick = (e) => { e.stopPropagation(); step(1); };
   document.querySelector(".vn-box").addEventListener("click", (e) => {
     if (e.target.closest("form") || e.target.closest(".choices")) return;
     if (typing) { typing.finish(); return; }

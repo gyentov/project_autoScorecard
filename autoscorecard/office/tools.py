@@ -40,6 +40,7 @@ class ToolBox:
         self.created: list[str] = []          # proposal ids made during this turn
         self.shown: list[dict] = []           # board items put up during this turn
         self.tasks: list[dict] = []           # work handed to teammates (Laras after a meeting)
+        self.called: list[str] = []           # tool names called this turn
         self._tools: dict[str, tuple[ToolSpec, Callable[..., Any]]] = {}
         self._register()
         team = {"type": "string", "enum": ["laras", "bening", "citra", "kirana"]}
@@ -55,7 +56,9 @@ class ToolBox:
                       "memasukkan ke deck). Tiap langkah mulai setelah langkah sebelumnya selesai, "
                       "dan Laras melapor ke Boss tiap langkah.",
                       {"steps": {"type": "array", "items": {"type": "object", "properties": {
-                          "to": team, "task": {"type": "string"}}, "required": ["to", "task"]}}},
+                          "to": team, "task": {"type": "string"}}, "required": ["to", "task"]}},
+                       "for_order": {"type": "integer", "description": "nomor perintah Boss yang "
+                                     "dikerjakan alur ini; perintah itu ikut selesai saat alur selesai"}},
                       ["steps"], self.plan_relay)
         if consult:
             self._add("ask_teammate", "TANYA rekan (jawabannya kembali ke kamu, dengan data dari "
@@ -64,6 +67,8 @@ class ToolBox:
                       self.ask_teammate)
         if agent == "laras":
             self._timeline_tools()
+        if agent == "bening":
+            self._dictionary_tools()
 
     # ------------------------------------------------------------- plumbing
     def _add(self, name: str, desc: str, props: dict, required: list[str], fn) -> None:
@@ -73,9 +78,18 @@ class ToolBox:
     def specs(self) -> list[ToolSpec]:
         return [t[0] for t in self._tools.values()]
 
+    # tools that only look: calling them does not count as doing what was asked
+    READ_ONLY = {"project_status", "tables", "join_plan", "target_info", "feature_status",
+                 "iv_table", "bin_table", "performance", "dictionary_gaps", "cost_status",
+                 "check_teammate_work"}
+
+    def acted(self) -> bool:
+        return any(n not in self.READ_ONLY for n in self.called)
+
     def call(self, name: str, args: dict) -> tuple[str, bool]:
         if name not in self._tools:
             return f"unknown tool {name}", True
+        self.called.append(name)
         try:
             return _json(self._tools[name][1](**args)), False
         except (KeyError, ValueError, FileNotFoundError) as e:
@@ -114,6 +128,11 @@ class ToolBox:
                           "description": "rekan; kosong = semua tim"},
                    "order": {"type": "integer", "description": "nomor perintah/tugas/alur tertentu"}},
                   [], lambda to=None, order=None: o.team_work(to, order))
+        self._add("dictionary", "KAMUS (versi terakhir yang lolos review Laras): arti, satuan, "
+                  "dasar dan keyakinan satu variabel/tabel, atau semua bila kosong. Pakai sebelum "
+                  "menjelaskan arti variabel; jangan menebak.",
+                  {"name": {**S, "description": "nama variabel atau tabel; kosong = ringkasan"}},
+                  [], lambda name=None: o.dictionary_lookup(name))
         self._add("cost_status", "Budget LLM terpakai dan sisa.", {}, [], o.cost_status)
         # showing data on the board (all agents)
         arr = lambda items: {"type": "array", "items": items}             # noqa: E731
@@ -265,8 +284,8 @@ class ToolBox:
         return {"assigned_to": to, "task": task, "order": o["id"], "status": o["status"],
                 "notes": [n["note"] for n in o["notes"]][-2:]}
 
-    def plan_relay(self, steps: list[dict]) -> dict:
-        parent = self.office.start_relay(steps, via=self.agent)
+    def plan_relay(self, steps: list[dict], for_order: int | None = None) -> dict:
+        parent = self.office.start_relay(steps, via=self.agent, for_order=for_order)
         self.tasks.append(parent)
         p = self.office.orders.get(parent["id"])
         return {"relay": p["id"], "steps": [f"{TEAM_NAME(x['to'])}: {x['task']}" for x in p["chain"]],
@@ -280,6 +299,32 @@ class ToolBox:
             "singkat dan berisi fakta dari tool."), consult=False)
         self.office.events.emit("handoff", self.agent, to=to, memo="bertanya ke rekan")
         return {"from": to, "answer": r.text, "shown_on_board": [b["title"] for b in r.board]}
+
+    # ------------------------------------------------------------- dictionary (Bening)
+    def _dictionary_tools(self) -> None:
+        o, S = self.office, {"type": "string"}
+        self._add("propose_derived_variable", "USULKAN VARIABEL TURUNAN baru dari kolom yang ada "
+                  "(boleh kapan saja, juga setelah Cut 1): ratio a/b, diff a-b, sum, product, log "
+                  "ln(1+a), flag (a cmp value), missing. Hasilnya pratinjau IV dan missing rate di "
+                  "data train; masuk kandidat cut berikutnya setelah ACC Boss, kamus ikut diperbarui "
+                  "dan direview Laras.",
+                  {"name": {**S, "description": "nama kolom baru (huruf, angka, _)"},
+                   "op": {**S, "enum": ["ratio", "diff", "sum", "product", "log", "flag", "missing"]},
+                   "a": S, "b": S, "cmp": {**S, "enum": [">", ">=", "<", "<=", "==", "!="]},
+                   "value": {}, "reason": S}, ["name", "op", "a"], self.propose_derived_variable)
+        self._add("update_meaning", "PERBARUI ARTI variabel atau tabel di kamus sesuai hasil diskusi "
+                  "dengan Boss (arti lama disimpan di riwayat). Laras mereview versi baru sebelum "
+                  "jadi dokumentasi.",
+                  {"name": {**S, "description": "nama variabel atau tabel"}, "arti": S,
+                   "satuan": S, "reason": S}, ["name", "arti"],
+                  lambda name, arti, satuan=None, reason="": o.update_meaning(name, arti, satuan, reason))
+
+    def propose_derived_variable(self, name: str, op: str, a: str, b: str | None = None,
+                                 cmp: str | None = None, value=None, reason: str = "") -> dict:
+        r = self.office.propose_derived({"name": name, "op": op, "a": a, "b": b, "cmp": cmp,
+                                         "value": value}, self.agent, reason)
+        self.created.append(r["proposal_id"])
+        return r
 
     # ------------------------------------------------------------- timeline (Laras)
     def _timeline_tools(self) -> None:
@@ -302,6 +347,8 @@ class ToolBox:
         self._add("remove_milestone", "HAPUS milestone yang ditambahkan selama proyek (id x1, x2, "
                   "...). Milestone alur utama tidak bisa dihapus.", {"id": ids}, ["id"],
                   self.remove_milestone)
+        if self.meeting_id:                       # already in a meeting: no second one
+            return
         self._add("call_meeting", "PANGGIL RAPAT koordinasi sekarang (kalau tidak ada rapat yang "
                   "sedang terbuka): topik, peserta, dan agenda singkat. Boss tinggal klik "
                   "'Masuk rapat'.", {"topic": S, "attendees": {"type": "array", "items": {

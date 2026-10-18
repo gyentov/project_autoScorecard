@@ -22,7 +22,7 @@ class Meeting:
     title: str
     host: str
     attendees: list[str]
-    slides: list[dict]                # {"title", "file"}
+    slides: list[dict]                # {"title", "file"}: the prepared deck on the projector
     script: list[dict]                # {"speaker", "mood", "pose", "slide", "text"}
     choices: list[dict]               # {"id", "label", "action", "payload"}
     context: str = ""                 # facts for the agents when the Boss types
@@ -33,6 +33,7 @@ class Meeting:
     cost_usd: float = 0.0
     created: str = ""
     invite_email: str | None = None
+    board: list[dict] = field(default_factory=list)   # put up on request (queries): own tab
 
 
 def pose_for(mood: str, slide: int | None = None) -> str:
@@ -47,13 +48,14 @@ def pose_for(mood: str, slide: int | None = None) -> str:
 
 
 def say(speaker: str, mood: str, text: str, slide: int | None = None,
-        pose: str | None = None) -> dict:
+        pose: str | None = None, board: int | None = None) -> dict:
     if mood not in MOODS:
         raise ValueError(f"unknown mood {mood}")
     pose = pose or pose_for(mood, slide)
     if pose not in POSES:
         raise ValueError(f"unknown pose {pose}")
-    return {"speaker": speaker, "mood": mood, "pose": pose, "slide": slide, "text": text}
+    return {"speaker": speaker, "mood": mood, "pose": pose, "slide": slide, "board": board,
+            "text": text}
 
 
 def choice(cid: str, label: str, action: str, **payload) -> dict:
@@ -94,15 +96,16 @@ class Meetings:
                slides: list[tuple[str, str, str]], script: list[dict], choices: list[dict],
                context: str = "", cut: str | None = None, invite_body: str = "",
                attachments: list[str] | None = None) -> Meeting:
-        """slides: (title, content, extension) with extension "svg" or "html"."""
+        """slides: (title, content, extension) with extension "svg", "html" (wrapped as a
+        projector page) or "page" (a complete page, e.g. a deck slide, written as is)."""
         mid = datetime.now().strftime("%Y%m%d%H%M%S%f-") + uuid.uuid4().hex[:4]
         sdir = self.dir / mid
         sdir.mkdir()
         files = []
         for k, (stitle, content, ext) in enumerate(slides):
-            f = sdir / f"slide{k + 1}.{ext}"
-            f.write_text(light_only(content) if ext == "svg" else _page(stitle, light_only(content)),
-                         encoding="utf-8")
+            f = sdir / f"slide{k + 1}.{'html' if ext == 'page' else ext}"
+            f.write_text(content if ext == "page" else light_only(content) if ext == "svg"
+                         else _page(stitle, light_only(content)), encoding="utf-8")
             files.append({"title": stitle, "file": str(f.relative_to(self.project.root))})
         m = Meeting(mid, kind, title, host, attendees, files, script, choices, context, cut,
                     created=_now())
@@ -127,18 +130,21 @@ class Meetings:
                              attendees=m.attendees)
             for ln in m.script:
                 self.events.emit("dialogue", ln["speaker"], meeting_id=mid, mood=ln["mood"],
-                                 pose=ln.get("pose"), slide=ln["slide"], text=ln["text"])
+                                 pose=ln.get("pose"), slide=ln["slide"], board=ln.get("board"),
+                                 text=ln["text"])
         return m
 
     def add_turn(self, m: Meeting, who: str, text: str, mood: str = "neutral",
-                 cost: float = 0.0, slide: int | None = None) -> None:
-        """`slide`: what the speaker put on the projector with this line (the board)."""
-        m.slides = self.get(m.id).slides             # keep slides the board added this turn
+                 cost: float = 0.0, slide: int | None = None, board: int | None = None) -> None:
+        """`slide`: the deck slide this line is about; `board`: what the speaker put up on
+        the board tab with it (a query, a table)."""
+        m.board = self.get(m.id).board               # keep items the board added this turn
         m.transcript.append({"who": who, "text": text, "mood": mood, "ts": _now(),
-                             "slide": slide})
+                             "slide": slide, "board": board})
         m.cost_usd += cost
         self.save(m)
-        self.events.emit("dialogue", who, meeting_id=m.id, mood=mood, text=text, slide=slide)
+        self.events.emit("dialogue", who, meeting_id=m.id, mood=mood, text=text, slide=slide,
+                         board=board)
 
     def end(self, m: Meeting, decision: str, next_steps: list[str],
             timeline_md: str = "", boss_summary: str = "") -> Meeting:

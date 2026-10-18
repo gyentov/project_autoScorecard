@@ -69,7 +69,16 @@
 <!-- meeting: visual-novel scene -->
 <section id="vn" class="hidden">
   <div id="vn-bg"></div>
-  <div id="vn-screen"><div id="vn-slide-title"></div><div id="vn-slide"></div></div>
+  <div id="vn-screen">
+    <div id="vn-bar">
+      <button id="vn-tab-deck" class="vn-tab on" title="Deck yang dipresentasikan">📽 Deck</button>
+      <button id="vn-tab-board" class="vn-tab" title="Data yang Boss minta selama rapat">📋 Papan</button>
+      <span id="vn-slide-title"></span>
+      <button id="vn-prev" class="vn-nav" title="Sebelumnya">‹</button>
+      <button id="vn-next-slide" class="vn-nav" title="Berikutnya">›</button>
+    </div>
+    <div id="vn-slide"></div>
+  </div>
   <div id="vn-cast"></div>
   <div id="vn-title"></div>
   <button id="vn-close" class="ghost">Keluar rapat</button>

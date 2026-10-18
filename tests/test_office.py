@@ -85,7 +85,12 @@ def test_full_project_flow(office):
     m = open_meeting(o)
     assert m.kind == "results" and m.cut == "cut1"
     assert [c["action"] for c in m.choices] == ["next_cut"]
-    join_slide = next(sl for sl in m.slides if sl["title"] == "Join data (Bening)")
+    join_slide = next(sl for sl in m.board if sl["title"] == "Join data (Bening)")   # board tab
+    deck = [(o.project.root / sl["file"]).read_text() for sl in m.slides]    # the deck, projected
+    assert "class='slide" in deck[0] and any("Scorecard by variable" in d for d in deck)
+    assert (o.project.dir("artifacts") / "cut1" / "deck_cut1.html").exists()
+    feats = o.state.cuts["cut1"]["features"]
+    assert sum(l["slide"] is not None and l["text"].startswith(tuple(feats)) for l in m.script) == len(feats)
     assert "fitur di model" in (o.project.root / join_slide["file"]).read_text()
     assert any(l["speaker"] == "bening" and "join" in l["text"] for l in m.script)
 
@@ -103,9 +108,11 @@ def test_full_project_flow(office):
     assert "Paksa cust_province" in text                          # the change is named
     from dataclasses import asdict                                   # the API can send the state
     json.dumps(asdict(o.state), allow_nan=False)
-    titles = [sl["title"] for sl in m.slides]                      # Citra's report, every cut
-    assert {"Kontribusi skor", "Binning per variabel", "Pembagian risiko (20 kelompok)",
-            "Usulan kategori risiko (VL–VH)"} <= set(titles)
+    deck = " ".join((o.project.root / sl["file"]).read_text() for sl in m.slides)
+    assert all(t in deck for t in ("Score drivers", "Recommended score binning", "Risk levels",
+                                   "Hyperparameter tuning", "risk index"))   # final: tuned
+    assert o.state.cuts["cut2"]["tuning"]["best"] and "tuning" in " ".join(l["text"] for l in m.script)
+    assert "Usulan kategori risiko (VL–VH)" in [b["title"] for b in m.board]
     bands = pd.read_csv(o.project.dir("artifacts") / "cut2" / "risk_bands.csv")
     assert (bands["pct"] >= 0.05).all() and len(bands) <= 20
     lv = o.risk_levels("cut2")["levels"]
@@ -473,12 +480,13 @@ def test_projects_go_to_the_trash(tmp_path, monkeypatch):
 def test_team_shows_data_on_the_board_not_in_the_chat(office):
     o = office
     m = o.meetings.get(begin(o)["meeting_id"])
-    n0 = len(m.slides)
+    n0, b0 = len(m.slides), len(m.board)
     r = o.say("sampel 5", meeting_id=m.id)                        # $0 shortcut, before the join
     assert r["board"] and r["estimate"] is None and "papan" in r["text"]
     m = o.meetings.get(m.id)
-    assert len(m.slides) == n0 + 1 and m.transcript[-1]["slide"] == n0   # on the projector
-    page = (o.project.root / m.slides[-1]["file"]).read_text()
+    assert len(m.slides) == n0 and len(m.board) == b0 + 1          # board tab, deck untouched
+    assert m.transcript[-1]["board"] == b0
+    page = (o.project.root / m.board[-1]["file"]).read_text()
     assert page.count("<tr>") == 6                                # header + 5 rows
     o.choose(m.id, "acc")                                         # -> join + target meeting
     t = open_meeting(o)
@@ -494,7 +502,7 @@ def test_team_shows_data_on_the_board_not_in_the_chat(office):
     df, _ = o.dataset()
     assert "rows_shown" in smp and str(df["cust_age"].iloc[0]) not in json.loads(smp)["note"]
     assert set(json.loads(smp)) == {"shown_on_board", "rows_shown", "columns", "note"}
-    assert [b["slide"] for b in o.board.list()[-2:]] == [None, None]    # desk items: no slide
+    assert [b["board"] for b in o.board.list()[-2:]] == [None, None]    # desk items: no meeting
     assert "tidak ada" in json.loads(json.dumps(box.call("show_sample", {"columns": ["nope"]})))[0]
 
 
@@ -732,3 +740,146 @@ def test_checking_a_teammates_work(tmp_path):
     assert r["text"] == "Bening masih menunggu data, Boss."
     assert "check_teammate_work" in {t.name for t in prov.requests[n].tools}
     assert "Bening" in str(prov.requests[n + 1].messages[-1].content)
+
+
+def test_one_yes_covers_the_next_questions(tmp_path):
+    o, prov = paid_office(tmp_path, [
+        {"text": "<mood:neutral> <ucap>Model Cut 2 paling stabil, Boss.</ucap>"},
+        {"text": "<mood:neutral> <ucap>Fitur terkuat umur nasabah, Boss.</ucap>"},
+    ], ask_above=0.00001)
+    r = o.say("model mana yang paling stabil?", to="laras")
+    assert r["needs_cost_ok"]
+    r = o.say("loh kok minta uang terus", to="laras")       # explained, for free
+    assert o.conversations.list()[-1]["kind"] == "command" and "ya" in r["text"]
+    assert len(prov.requests) == 0
+    r = o.say("ok", to="laras")                              # the waiting question runs
+    assert r["text"] == "Model Cut 2 paling stabil, Boss." and not r["needs_cost_ok"]
+    r = o.say("fitur terkuat apa?", to="laras")              # no new question for a while
+    assert r["text"] == "Fitur terkuat umur nasabah, Boss."
+    o.say("good job", to="laras")
+    assert o.conversations.list()[-1]["kind"] == "small_talk"
+    assert len(prov.requests) == 2
+
+
+def test_relay_closes_the_order_it_carries_out(office):
+    o = office
+    order = o.orders.add("kerjakan kamus lalu deck", "laras")
+    p = o.start_relay([{"to": "kirana", "task": "susun draft deck"},
+                       {"to": "laras", "task": "susun dokumentasi model"}], for_order=order["id"])
+    assert o.orders.get(order["id"])["status"] == "dikerjakan"
+    r = o.say(f"update nomor {order['id']}", to="laras")
+    assert f"#{order['id']}" in r["text"] and o.conversations.list()[-1]["kind"] == "command"
+    begin(o)
+    for _ in range(4):
+        m = open_meeting(o)
+        o.choose(m.id, next(c["id"] for c in m.choices if c["action"] in
+                            ("kickoff_acc", "target_acc", "plan_acc", "next_cut", "acc")))
+    o.run_open_orders()
+    assert o.orders.get(p["id"])["status"] == "selesai"
+    done = o.orders.get(order["id"])
+    assert done["status"] == "selesai" and f"alur #{p['id']}" in done["notes"][-1]["note"]
+
+
+def test_timeline_instruction_is_done_not_promised(tmp_path):
+    o, prov = paid_office(tmp_path, [
+        {"text": "<mood:apologetic> <ucap>Maaf Boss, langsung saya perbaiki sekarang.</ucap>"},
+        {"tools": [ToolCall("t1", "update_milestone", {"id": "x1", "status": "done"})]},
+        {"text": "<mood:happy> <ucap>Sudah saya tandai selesai, Boss.</ucap>"},
+    ], ask_above=1.0)
+    tl = o.timeline
+    tl.update("dictionary", "waiting_boss", "37 variabel perlu konfirmasi")
+    tl.update("deck", "waiting_boss", "draft menunggu review")
+    # the Boss's complaint: done by rule, for free
+    r = o.say("LARAS ini kenapa di timeline masih menyalahkan saya \"menunggu BOSS\" kan sudah done",
+              to="laras")
+    assert tl.get("dictionary").status == "done" and tl.get("deck").status == "done"
+    assert "Kamus data" in r["text"] and r["board"] and len(prov.requests) == 0
+    r = o.say("tandai cut 1 selesai di timeline", to="laras")         # gated: refused, said why
+    assert tl.get("cut1").status != "done" and "tidak bisa" in r["text"]
+    # a promise without a tool call is sent back once, and then she acts
+    tl.add("Validasi independen", "citra", after="cut2")
+    r = o.say("validasi independen sudah beres ya", to="laras")
+    assert tl.get("x1").status == "done" and r["text"].startswith("Sudah saya tandai selesai, Boss.")
+    assert any("belum memanggil tool" in str(x.content) for q in prov.requests for x in q.messages)
+
+
+def test_everyone_takes_a_turn_in_a_meeting(tmp_path):
+    o, prov = paid_office(tmp_path, [
+        {"text": "<mood:happy> <ucap>Saya Laras, koordinator.</ucap>"},
+        {"text": "<mood:happy> <ucap>Saya Bening, urus data.</ucap>"},
+        {"text": "<mood:neutral> <ucap>Saya Citra, modelnya.</ucap>"},
+        {"text": "<mood:excited> <ucap>Saya Kirana, deck!</ucap>"},
+        {"text": "<mood:happy> <ucap>Data paling seru, Boss.</ucap>"},
+        {"text": "<mood:neutral> <ucap>Model paling seru.</ucap>"},
+        {"text": "<mood:excited> <ucap>Deck dong!</ucap>"},
+        {"text": "<mood:neutral> <ucap>Bagian saya ya, Boss.</ucap>"},
+    ])
+    o.call_meeting("Team bonding", ["bening", "citra", "kirana"])
+    m = open_meeting(o)
+    r = o.say("ceritakan role kalian", meeting_id=m.id)
+    assert [r["agent"]] + [x["agent"] for x in r["more"]] == ["laras", "bening", "citra", "kirana"]
+    assert "call_meeting" not in {t.name for t in prov.requests[0].tools}
+    assert "Saya Laras, koordinator." in prov.requests[1].system           # she hears the others
+    r = o.say("yang lain juga jawab: bagian paling seru apa?", meeting_id=m.id)
+    assert r["agent"] != "kirana" and len(r["more"]) == 2        # Kirana spoke last: skipped
+    r = o.say("@citra kamu suka bagian apa?", meeting_id=m.id)     # one name: only her
+    assert r["agent"] == "citra" and r["more"] == []
+    assert o.meetings.get(m.id).status != "ended"
+
+
+def test_bening_derives_variables_and_laras_reviews_the_dictionary(office):
+    o = office
+    begin(o)
+    for _ in range(3):                                            # kickoff, target, plan -> Cut 1
+        m = open_meeting(o)
+        o.choose(m.id, next(c["id"] for c in m.choices if c["action"] in
+                            ("kickoff_acc", "target_acc", "plan_acc")))
+    m = open_meeting(o)
+    assert m.cut == "cut1"
+    o.document_variables()
+    rev = json.loads((o.project.dir("work") / "dictionary_review.json").read_text())
+    assert rev["status"] == "approved" and rev["reviewed_by"] == "laras"
+    assert any(e.subject.startswith("Review kamus") for e in o.inbox.list())
+    approved = {r["variabel"]: r for r in o.approved_meanings()}
+    assert all(r["review"] in ("lolos review Laras", "perlu konfirmasi Boss") for r in approved.values())
+    # after Cut 1: a derived variable, typed, for free
+    r = o.say("variabel baru dti = loan_amount / cust_income", meeting_id=m.id)
+    assert r["agent"] == "bening" and r["proposals"] and "IV" in r["text"]
+    o.proposals.decide(r["proposals"][0], True)
+    df, _ = o.dataset()
+    assert "dti" in df.columns and df["dti"].notna().mean() > 0.9
+    approved = {r["variabel"]: r for r in o.approved_meanings()}
+    assert "loan_amount / cust_income" in approved["dti"]["arti"]
+    # a meaning settled in discussion: kept, reviewed, readable by every teammate
+    r = o.say("arti noise_a = skor internal lama dari sistem originasi", meeting_id=m.id)
+    assert "skor internal" in o.dictionary_lookup("noise_a")["variabel"]["arti"]
+    o.document_variables()                                        # worked out again: still kept
+    assert "skor internal" in o.dictionary_lookup("noise_a")["variabel"]["arti"]
+    from autoscorecard.office.tools import ToolBox
+    for a in ("laras", "citra", "kirana"):
+        got = json.loads(ToolBox(o, a).call("dictionary", {"name": "dti"})[0])
+        assert got["review"] == "approved" and "cust_income" in got["variabel"]["arti"]
+    o.choose(m.id, "next")                                        # Cut 2: dti is a candidate
+    j = pd.read_csv(o.project.dir("artifacts") / "cut2" / "waterfall_features.csv")
+    assert "dti" in set(j.feature)
+    from autoscorecard.office.deliverables import documentation
+    d = documentation(o)                                          # the report, Indonesian
+    page = (o.project.root / d["file"]).read_text()
+    assert {"Kamus variabel", "Hyperparameter tuning", "Variabel model, bin per bin",
+            "Kelompok skor dan KS", "Kategori risiko VL–VH"} <= set(d["sections"])
+    assert "lolos review Laras" in page and "Tabel KS" in page and "dti" in page
+
+
+def test_laras_review_finds_and_bening_fixes():
+    from autoscorecard.office import dictreview as DR
+    rows = [{"variabel": "el", "arti": "el", "satuan": "", "dasar": "", "keyakinan": "rendah"},
+            {"variabel": "x1", "arti": "Amount of loan (belum diterjemahkan: perlu LLM)",
+             "asli": "Amount of loan", "dasar": "kamus data bank", "keyakinan": "tinggi"},
+            {"variabel": "g", "arti": "mungkin gaji", "dasar": "dugaan AI", "keyakinan": "rendah"}]
+    tables = [{"tabel": "t9.csv", "arti": "(belum jelas)"}]
+    found = DR.check(rows, tables, set())
+    assert {f["item"] for f in found if f["blocking"]} == {"el", "x1", "g", "t9.csv"}
+    rev = DR.run(None, rows, tables, {"el"})
+    assert rev["status"] == "approved" and len(rev["rounds"]) == 2
+    assert "konfirmasi" in rows[0]["arti"] and "konfirmasi" in rows[2]["arti"]
+    assert any(n["item"] == "el" for n in rev["notes"])             # still for the Boss

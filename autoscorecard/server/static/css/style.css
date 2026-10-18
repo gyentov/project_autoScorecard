@@ -99,7 +99,14 @@ button.ghost { background: transparent; }
   width: min(52vw, 900px); height: 52vh; background: #fdfdfb; border: 6px solid #2d2a33;
   border-radius: 6px; box-shadow: 0 0 0 3px #555, 0 10px 40px rgba(0,0,0,.6); display: flex;
   flex-direction: column; }
-#vn-slide-title { font-size: 12px; padding: 3px 8px; background: #2d2a33; color: #ddd; }
+#vn-bar { display: flex; align-items: center; gap: 4px; background: #2d2a33; padding: 2px 4px; }
+#vn-slide-title { font-size: 12px; padding: 3px 8px; color: #ddd; flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vn-tab, .vn-nav { background: transparent; color: #bbb; border: 1px solid #555; border-radius: 4px;
+  font-size: 12px; padding: 1px 8px; cursor: pointer; }
+.vn-tab.on { background: #fdfdfb; color: #2d2a33; border-color: #fdfdfb; font-weight: 600; }
+.vn-tab.fresh { border-color: #fab219; color: #fab219; }
+.vn-nav { font-size: 15px; line-height: 1; padding: 0 8px; }
 #vn-slide { flex: 1; position: relative; overflow: hidden; }
 #vn-slide iframe, #vn-slide img { position: absolute; inset: 0; width: 100%; height: 100%;
   border: 0; object-fit: contain; background: #fdfdfb; }

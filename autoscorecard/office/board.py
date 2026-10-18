@@ -49,7 +49,8 @@ class Board:
         return self._index()
 
     def show(self, title: str, body_html: str, by: str, meeting_id: str | None = None) -> dict:
-        """Put an item on the board; in a meeting it is also the next projector slide."""
+        """Put an item on the board; in a meeting it goes on the projector's board tab,
+        apart from the prepared deck."""
         self.dir.mkdir(parents=True, exist_ok=True)
         items = self._index()
         n = len(items) + 1
@@ -57,16 +58,16 @@ class Board:
         f.write_text(_page(title, body_html), encoding="utf-8")
         item = {"n": n, "title": title, "file": str(f.relative_to(self.project.root)), "by": by,
                 "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                "meeting_id": meeting_id, "slide": None}
+                "meeting_id": meeting_id, "board": None}
         if meeting_id:
             m = self.meetings.get(meeting_id)
-            m.slides.append({"title": title, "file": item["file"]})
+            m.board.append({"title": title, "file": item["file"], "by": by})
             self.meetings.save(m)
-            item["slide"] = len(m.slides) - 1
+            item["board"] = len(m.board) - 1
         items.append(item)
         (self.dir / "index.json").write_text(json.dumps(items, indent=1), encoding="utf-8")
         self.events.emit("board", by, title=title, file=item["file"], meeting_id=meeting_id,
-                         slide=item["slide"])
+                         board=item["board"])
         return item
 
 

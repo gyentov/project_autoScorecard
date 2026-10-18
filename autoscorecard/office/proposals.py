@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 
 from ..engine import finalization as fin
 from ..engine.waterfall import load_plan, parse_steps, save_plan
+from . import derived as DV
 from .state import OfficeState
 
 KINDS = {
@@ -26,6 +27,7 @@ KINDS = {
     "woe_override": "ubah WoE secara manual",
     "plan_change": "ubah parameter waterfall",
     "target": "ubah definisi target",
+    "derive_variable": "variabel turunan baru",
 }
 
 
@@ -51,6 +53,7 @@ class Proposals:
         self.project = project
         self.path = project.dir("work") / "proposals.json"
         self.events = events
+        self.on_accept = None                 # the office: follow-up work after an ACC
 
     def _all(self) -> list[Proposal]:
         if not self.path.exists():
@@ -96,6 +99,8 @@ class Proposals:
         if self.events:
             self.events.emit("approval", by, what="proposal", id=p.id,
                              decision=p.status, summary=p.summary)
+        if accept and self.on_accept:
+            self.on_accept(p)
         return p
 
 
@@ -112,6 +117,7 @@ def describe(kind: str, pl: dict) -> str:
         "plan_change": lambda: f"Waterfall {pl['step']}: {pl.get('params', {})}"
                                + ("" if pl.get("enabled", True) else " (dimatikan)"),
         "target": lambda: f"Target: {pl['column']} {pl['rule']} {pl['value']}",
+        "derive_variable": lambda: f"Variabel baru {pl['name']} = {DV.formula(pl)}",
     }[kind]()
 
 
@@ -119,7 +125,8 @@ def _validate(kind: str, pl: dict, reason: str) -> None:
     need = {"force_feature": ["feature"], "unforce_feature": ["feature"],
             "exclude_feature": ["feature"], "include_feature": ["feature"],
             "bin_edit": ["feature"], "woe_override": ["feature", "overrides"],
-            "plan_change": ["step"], "target": ["column", "rule", "value"]}[kind]
+            "plan_change": ["step"], "target": ["column", "rule", "value"],
+            "derive_variable": ["name", "op", "a"]}[kind]
     missing = [k for k in need if k not in pl]
     if missing:
         raise ValueError(f"{kind} needs {missing}")
@@ -170,6 +177,9 @@ def _apply(project, p: Proposal) -> None:
         else:
             steps.insert(0, {"type": pl["step"], "params": pl.get("params", {})})
         save_plan(project, parse_steps(steps), approved=True, by="boss")   # ACC'd change
+    elif p.kind == "derive_variable":
+        DV.add(project, {k: pl[k] for k in ("name", "op", "a", "b", "cmp", "value") if k in pl},
+               by=p.by, reason=p.reason)
     elif p.kind == "target":
         st = OfficeState.load(project)
         st.target = {**(st.target or {}), "column": pl["column"], "rule": pl["rule"],
