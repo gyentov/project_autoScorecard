@@ -78,6 +78,79 @@ class Timeline:
             self.events.emit("milestone", m.owner, id=mid, status=status, note=m.note)
         return m
 
+    # ------------------------------------------------------------- Laras edits the plan
+    # milestones the meetings drive: their status follows the work, not a typed request
+    GATED = ("kickoff", "data", "target", "waterfall_plan")
+
+    def _gated(self, mid: str) -> bool:
+        return mid in self.GATED or mid.startswith("cut")
+
+    def update(self, mid: str, status: str | None = None, note: str | None = None,
+               title: str | None = None, owner: str | None = None,
+               length: int | None = None) -> Milestone:
+        """Change a milestone at the Boss's request. The status of a milestone a meeting
+        decides (kickoff, data, target, waterfall plan, cuts) is refused with the reason."""
+        m = self.get(mid)
+        if status is not None and status != m.status:
+            if self._gated(mid) and status == "done":
+                raise ValueError(f"'{m.title}' selesai otomatis lewat rapat/ACC-nya; tidak bisa "
+                                 "ditutup manual")
+            self.set(mid, status, note)
+        elif note is not None:
+            self.set(mid, m.status, note)
+        if title:
+            m.title = title
+        if owner:
+            if owner not in TEAM:
+                raise ValueError(f"tidak ada anggota tim '{owner}'")
+            m.owner = owner
+        if length:
+            m.length = max(1, min(int(length), 6))
+        self.save()
+        if self.events and (title or owner or length):
+            self.events.emit("milestone", m.owner, id=mid, status=m.status, note=m.note,
+                             edited=True)
+        return m
+
+    def add(self, title: str, owner: str, after: str, before: str | None = None,
+            length: int = 1, note: str = "") -> Milestone:
+        """A new milestone that starts after `after`; `before` (optional) then waits for it."""
+        if owner not in TEAM:
+            raise ValueError(f"tidak ada anggota tim '{owner}'")
+        prev = self.get(after)
+        ia = self.items.index(prev)
+        if before is not None:
+            nxt = self.get(before)
+            if self.items.index(nxt) <= ia:
+                raise ValueError(f"'{nxt.title}' sudah sebelum '{prev.title}'")
+        n = 1 + max([int(x.id[1:]) for x in self.items if x.id[:1] == "x" and x.id[1:].isdigit()]
+                    or [0])
+        m = Milestone(f"x{n}", title, owner, [after], max(1, min(int(length), 6)), note=note)
+        self.items.insert(ia + 1, m)
+        if before is not None:
+            nxt = self.get(before)
+            nxt.depends_on = [d for d in nxt.depends_on if d != after] + [m.id]
+        self.save()
+        if self.events:
+            self.events.emit("milestone", owner, id=m.id, status=m.status, note=note, added=True)
+        return m
+
+    def remove(self, mid: str) -> Milestone:
+        """Only milestones added during the project can go; whoever waited for it now
+        waits for what it waited for."""
+        m = self.get(mid)
+        if not mid.startswith("x"):
+            raise ValueError(f"'{m.title}' bagian alur utama; tidak bisa dihapus (bisa diberi catatan)")
+        for x in self.items:
+            if mid in x.depends_on:
+                x.depends_on = [d for d in x.depends_on if d != mid] + \
+                    [d for d in m.depends_on if d not in x.depends_on]
+        self.items.remove(m)
+        self.save()
+        if self.events:
+            self.events.emit("milestone", m.owner, id=mid, status="removed", note="")
+        return m
+
     def cuts(self) -> list[Milestone]:
         return [m for m in self.items if m.id.startswith("cut")]
 
@@ -88,7 +161,10 @@ class Timeline:
         m = Milestone(f"cut{n}", f"Cut {n} (perpanjangan)", "citra", [last.id], note=reason)
         idx = self.items.index(self.get("deck"))
         self.items.insert(idx, m)
-        self.get("deck").depends_on = [m.id]
+        deck = self.get("deck")
+        deck.depends_on = [m.id if d == last.id else d for d in deck.depends_on]
+        if m.id not in deck.depends_on:
+            deck.depends_on.append(m.id)
         if last.title.endswith("(final)"):
             last.title = last.title.replace(" (final)", "")
         m.title = f"Cut {n} (final)"

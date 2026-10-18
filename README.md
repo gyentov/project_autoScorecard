@@ -20,6 +20,7 @@ cp .env.example .env        # add whichever keys you have; missing ones are skip
 
 ## Useful commands
 ```bash
+.venv/bin/uvicorn autoscorecard.server.app:app   # the pixel office: open http://127.0.0.1:8000/
 .venv/bin/python scripts/office_cli.py --demo   # the office in the terminal (demo data)
 .venv/bin/python scripts/llm_smoke.py           # which providers are usable
 .venv/bin/python scripts/llm_smoke.py --call    # one tiny test call per provider

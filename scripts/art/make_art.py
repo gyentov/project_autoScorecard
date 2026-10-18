@@ -66,12 +66,12 @@ def api_key() -> str:
     return key
 
 
-def on_grey(p: Path) -> bytes:
-    """The image as PNG bytes, flattened on the grey background at the working size."""
+def on_grey(p: Path, size: tuple[int, int] = SIZE) -> bytes:
+    """The image as PNG bytes, flattened on the grey background at `size`."""
     im = Image.open(p).convert("RGBA")
-    if im.size != SIZE:                  # e.g. a finished 600x900 file when no raw is left
-        im = im.resize(SIZE, Image.LANCZOS)
-    bg = Image.new("RGBA", SIZE, GREY + (255,))
+    if im.size != size:                  # e.g. a finished 600x900 file when no raw is left
+        im = im.resize(size, Image.LANCZOS)
+    bg = Image.new("RGBA", size, GREY + (255,))
     bg.alpha_composite(im)
     buf = io.BytesIO()
     bg.convert("RGB").save(buf, format="PNG")
@@ -102,9 +102,9 @@ def face_mask(p: Path) -> bytes:
 
 
 def generate(prompt: str, attach: Path | None, out: Path, face: bool = False,
-             model: str = MODEL) -> float:
+             model: str = MODEL, size: tuple[int, int] = SIZE) -> float:
     """One image -> `out` (opaque PNG on grey). Returns its cost in USD."""
-    form = {"model": model, "prompt": prompt, "size": f"{SIZE[0]}x{SIZE[1]}",
+    form = {"model": model, "prompt": prompt, "size": f"{size[0]}x{size[1]}",
             "quality": "medium", "background": "opaque", "output_format": "png"}
     headers = {"Authorization": f"Bearer {api_key()}"}
     for attempt in range(4):
@@ -112,7 +112,9 @@ def generate(prompt: str, attach: Path | None, out: Path, face: bool = False,
             r = httpx.post(OPENAI + "generations", json=dict(form, n=1), headers=headers,
                            timeout=400)
         else:
-            files = [("image[]", (attach.name, on_grey(attach), "image/png"))]
+            # a reference with the output's own shape is sent as is (sprite sheets)
+            ref_size = size if Image.open(attach).size == size else SIZE
+            files = [("image[]", (attach.name, on_grey(attach, ref_size), "image/png"))]
             if face:
                 files.append(("mask", ("mask.png", face_mask(attach), "image/png")))
             r = httpx.post(OPENAI + "edits", data=form, files=files, headers=headers,
@@ -133,7 +135,7 @@ def generate(prompt: str, attach: Path | None, out: Path, face: bool = False,
                 + u.get("output_tokens", 0) * i_out) or EST.get(model, 0.06)
         with (RAW / "costs.jsonl").open("a", encoding="utf-8") as f:
             f.write(json.dumps({"t": time.strftime("%Y-%m-%d %H:%M:%S"), "model": model,
-                                "file": str(out.relative_to(CHARS)), "usd_est": round(cost, 5),
+                                "file": str(out.relative_to(ROOT)), "usd_est": round(cost, 5),
                                 "usage": u}) + "\n")
         return cost
     return 0.0

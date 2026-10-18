@@ -3,8 +3,9 @@
     .venv/bin/python scripts/art/finish.py
 
 Works on every PNG/JPG/WebP under assets/characters/<id>/. A file that is not yet a
-600x900 transparent PNG is converted in place (saved as <name>.png; the original goes to
-assets/characters/_originals/). Uses `rembg` if it is installed, otherwise a flood fill
+600x900 transparent PNG is converted in place (saved as <name>.png). A copy of a
+make_art.py image is then dropped (its source stays in _raw/); a hand-made original goes to
+assets/characters/_originals/. Uses `rembg` if it is installed, otherwise a flood fill
 of the flat grey background from the borders.
 """
 from __future__ import annotations
@@ -83,9 +84,12 @@ def main() -> None:
                 continue
             with Image.open(p) as src:
                 out = fit(remove_background(src))
-            keep = CHARS / "_originals" / d.name / p.name
-            keep.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(p), keep)
+            if (CHARS / "_raw" / d.name / p.name).exists():      # make_art keeps the source
+                p.unlink()
+            else:                                                # a hand-made file: keep it
+                keep = CHARS / "_originals" / d.name / p.name
+                keep.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(p), keep)
             out.save(p.with_suffix(".png"))
             converted += 1
             print(f"  finished {d.name}/{p.with_suffix('.png').name}")

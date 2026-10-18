@@ -1,9 +1,6 @@
-"""Write copy-paste prompts for the character art, one per image, in the order to make them.
-
-    .venv/bin/python scripts/art/prompts.py
-
-Output: docs/art_prompts/<id>.md (standing art) and docs/art_prompts/sprites.md.
-The full spec behind these prompts is docs/art_spec.md.
+"""The character art prompts: the cast, poses, moods and the edit wording that keeps
+every image the same person. Used by make_art.py (standing art) and map_sprites.py
+(office sprites); change a character here and every new image follows.
 """
 from __future__ import annotations
 
@@ -11,7 +8,6 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-OUT = ROOT / "docs" / "art_prompts"
 CUSTOM_MOODS = ROOT / "assets" / "characters" / "moods.json"
 
 STYLE = ("Anime visual-novel character standing art, otome dating-sim style, clean cel shading "
@@ -87,11 +83,6 @@ EXTRA = ["presenting_proud", "presenting_happy", "explaining_serious", "tablet_h
          "arms_crossed_serious", "arms_crossed_proud", "explaining_happy", "presenting_serious"]
 
 
-def block(n: int, save_as: str, attach: str, prompt: str) -> str:
-    return (f"### {n}. Save as `{save_as}`\n\n"
-            f"**Attach:** {attach}\n\n```text\n{prompt}\n```\n")
-
-
 EDIT = ("Edit the attached image. Change ONLY her facial expression to {mood}. Keep "
         "everything else exactly the same: hair, {keep}outfit, pose, framing, flat clean "
         "colors, art style and the plain grey background. Do not add anything that is not in "
@@ -139,72 +130,3 @@ def jobs(cid: str, extras: bool = True) -> list[dict]:
             out.append({"step": 4, "name": combo, "attach": f"{pose}_neutral",
                         "prompt": face_prompt(cid, combo[len(pose) + 1:]), "face": True})
     return out
-
-
-def character_file(cid: str) -> str:
-    d = f"assets/characters/{cid}"
-    parts = [
-        f"# {cid.capitalize()}: prompts in order\n",
-        "Easiest: let the project make them (`scripts/art/make_art.py`, see "
-        "docs/character_art.md). By hand: paste each prompt into ChatGPT or Gemini, attach what it "
-        "says under **Attach**, save the result with the exact name shown (one chat per "
-        "character), then run `.venv/bin/python scripts/art/finish.py`.\n",
-        "## Step 1: reference sheet (do this first, pick the best of a few tries)\n",
-        "Save this one twice: as `_reference.png` and as `neutral_neutral.png`.\n",
-        block(1, f"{d}/_reference.png  +  {d}/neutral_neutral.png", "nothing",
-              reference_prompt(cid)),
-    ]
-    heads = {2: "## Step 2: the other 7 poses (calm face)\n",
-             3: "## Step 3: the 8 other faces (edit the neutral pose, change only the face)\n",
-             4: "**Stop here if you like.** These 16 images are enough for the game. "
-                "Missing combinations use the nearest image.\n\n"
-                "## Step 4 (optional): extra combinations used most in meetings\n"}
-    for n, j in enumerate(jobs(cid), 2):
-        if j["step"] in heads:
-            parts.append(heads.pop(j["step"]))
-        parts.append(block(n, f"{d}/{j['name']}.png", f"`{j['attach']}.png`", j["prompt"]))
-    return "\n".join(parts)
-
-
-SPRITE_STYLE = (
-    "Pixel art sprite sheet for a cozy top-down life-sim game (Stardew Valley style). "
-    "A grid of 4 columns and 12 rows; every cell is one 32x48 pixel frame of the same "
-    "character, feet at the bottom of the cell, centered. 1-pixel dark outline, limited "
-    "palette, no anti-aliasing, transparent background. Rows from top to bottom: "
-    "1 walking toward the camera (4 frames), 2 walking left (4), 3 walking right (4), "
-    "4 walking away (4), 5 standing idle (2 frames, the second one blinking), "
-    "6 sitting and typing seen from behind (2), 7 drinking from a cup (2), "
-    "8 eating a snack (2), 9 looking at a tablet (2), 10 yawning (2), 11 a small bow (2), "
-    "12 cheering with arms up (2). Empty cells stay transparent.")
-
-SPRITE_CAST = dict(CAST, boss=(
-    "The Boss, a gender-neutral young adult with short neat dark hair, a smart-casual dark "
-    "green jacket over a white t-shirt and dark trousers."))
-
-
-def sprites_file() -> str:
-    parts = ["# Office sprites: prompts\n",
-             "One prompt per character. Image AIs are bad at exact pixel grids, so treat the "
-             "result as a draft: if a pixel-art tool (Aseprite, PixelLab, Piskel) is "
-             "available, clean it up there to a **128 × 576** PNG. The game can run on the "
-             "placeholder sprites until then.\n"]
-    for n, (cid, desc) in enumerate(SPRITE_CAST.items(), 1):
-        attach = "nothing" if cid == "boss" else f"`assets/characters/{cid}/_reference.png`"
-        parts.append(block(n, f"assets/sprites/{cid}.png", attach,
-                           f"{SPRITE_STYLE}\n\nCharacter: {desc} Small, cute but adult "
-                           f"proportions (about 2.5 heads tall); keep her hair shape and "
-                           f"outfit colors recognisable at this size."
-                           .replace("her hair", "their hair" if cid == "boss" else "her hair")))
-    return "\n".join(parts)
-
-
-def main() -> None:
-    OUT.mkdir(parents=True, exist_ok=True)
-    for cid in CAST:
-        (OUT / f"{cid}.md").write_text(character_file(cid), encoding="utf-8")
-    (OUT / "sprites.md").write_text(sprites_file(), encoding="utf-8")
-    print(f"wrote prompts to {OUT}")
-
-
-if __name__ == "__main__":
-    main()

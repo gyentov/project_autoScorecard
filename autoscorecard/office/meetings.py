@@ -12,7 +12,7 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 
-from .characters import MOODS, TEAM
+from .characters import MOODS, POSES, TEAM
 
 
 @dataclass
@@ -23,7 +23,7 @@ class Meeting:
     host: str
     attendees: list[str]
     slides: list[dict]                # {"title", "file"}
-    script: list[dict]                # {"speaker", "mood", "slide", "text"}
+    script: list[dict]                # {"speaker", "mood", "pose", "slide", "text"}
     choices: list[dict]               # {"id", "label", "action", "payload"}
     context: str = ""                 # facts for the agents when the Boss types
     cut: str | None = None
@@ -35,10 +35,25 @@ class Meeting:
     invite_email: str | None = None
 
 
-def say(speaker: str, mood: str, text: str, slide: int | None = None) -> dict:
+def pose_for(mood: str, slide: int | None = None) -> str:
+    """The standing-art pose that fits a line: the mood decides, a slide on screen
+    makes a calm line a presenting one."""
+    by_mood = {"proud": "presenting", "thinking": "thinking", "worried": "thinking",
+               "apologetic": "bowing", "excited": "cheering", "serious": "arms_crossed",
+               "happy": "explaining"}
+    if mood in by_mood:
+        return by_mood[mood]
+    return "presenting" if slide is not None else "neutral"
+
+
+def say(speaker: str, mood: str, text: str, slide: int | None = None,
+        pose: str | None = None) -> dict:
     if mood not in MOODS:
         raise ValueError(f"unknown mood {mood}")
-    return {"speaker": speaker, "mood": mood, "slide": slide, "text": text}
+    pose = pose or pose_for(mood, slide)
+    if pose not in POSES:
+        raise ValueError(f"unknown pose {pose}")
+    return {"speaker": speaker, "mood": mood, "pose": pose, "slide": slide, "text": text}
 
 
 def choice(cid: str, label: str, action: str, **payload) -> dict:
@@ -86,7 +101,8 @@ class Meetings:
         files = []
         for k, (stitle, content, ext) in enumerate(slides):
             f = sdir / f"slide{k + 1}.{ext}"
-            f.write_text(content if ext == "svg" else _page(stitle, content), encoding="utf-8")
+            f.write_text(light_only(content) if ext == "svg" else _page(stitle, light_only(content)),
+                         encoding="utf-8")
             files.append({"title": stitle, "file": str(f.relative_to(self.project.root))})
         m = Meeting(mid, kind, title, host, attendees, files, script, choices, context, cut,
                     created=_now())
@@ -111,39 +127,47 @@ class Meetings:
                              attendees=m.attendees)
             for ln in m.script:
                 self.events.emit("dialogue", ln["speaker"], meeting_id=mid, mood=ln["mood"],
-                                 slide=ln["slide"], text=ln["text"])
+                                 pose=ln.get("pose"), slide=ln["slide"], text=ln["text"])
         return m
 
     def add_turn(self, m: Meeting, who: str, text: str, mood: str = "neutral",
-                 cost: float = 0.0) -> None:
-        m.transcript.append({"who": who, "text": text, "mood": mood, "ts": _now()})
+                 cost: float = 0.0, slide: int | None = None) -> None:
+        """`slide`: what the speaker put on the projector with this line (the board)."""
+        m.slides = self.get(m.id).slides             # keep slides the board added this turn
+        m.transcript.append({"who": who, "text": text, "mood": mood, "ts": _now(),
+                             "slide": slide})
         m.cost_usd += cost
         self.save(m)
-        self.events.emit("dialogue", who, meeting_id=m.id, mood=mood, text=text)
+        self.events.emit("dialogue", who, meeting_id=m.id, mood=mood, text=text, slide=slide)
 
     def end(self, m: Meeting, decision: str, next_steps: list[str],
-            timeline_md: str = "") -> Meeting:
+            timeline_md: str = "", boss_summary: str = "") -> Meeting:
         m.status = "ended"
         m.decisions.append({"decision": decision, "ts": _now()})
         self.save(m)
         self.events.emit("meeting_ended", m.host, meeting_id=m.id, decision=decision)
-        self.inbox.send("laras", f"MOM: {m.title}", mom_markdown(m, next_steps, timeline_md),
+        self.inbox.send("laras", f"MOM: {m.title}",
+                        mom_markdown(m, next_steps, timeline_md, boss_summary),
                         "mom", attachments=[s["file"] for s in m.slides], meeting_id=m.id)
         return m
 
 
-def mom_markdown(m: Meeting, next_steps: list[str], timeline_md: str = "") -> str:
+def mom_markdown(m: Meeting, next_steps: list[str], timeline_md: str = "",
+                 boss_summary: str = "") -> str:
+    """The Boss's input appears as one summarised line (`boss_summary`), not word for
+    word; the team's answers follow. (The exact words are in the conversation log.)"""
     names = ", ".join(["Boss"] + [TEAM[a].name for a in m.attendees])
     out = [f"# Minutes of Meeting: {m.title}", "",
            f"**Tanggal:** {datetime.now():%Y-%m-%d %H:%M} · **Peserta:** {names}", "",
            "## Agenda", ""] + [f"{k + 1}. {s['title']}" for k, s in enumerate(m.slides)]
     out += ["", "## Pembahasan", ""] + [f"- **{TEAM[ln['speaker']].name}:** {ln['text']}"
                                         for ln in m.script]
-    qa = [t for t in m.transcript]
-    if qa:
-        out += ["", "## Tanya jawab", ""] + [
-            f"- **{'Boss' if t['who'] == 'boss' else TEAM[t['who']].name}:** {t['text']}"
-            for t in qa]
+    qa = [t for t in m.transcript if t["who"] != "boss"]
+    if boss_summary or qa:
+        out += ["", "## Arahan Boss dan tanggapan tim", ""]
+        if boss_summary:
+            out.append(f"- **Arahan Boss (ringkas):** {boss_summary}")
+        out += [f"- **{TEAM[t['who']].name}:** {t['text']}" for t in qa]
     out += ["", "## Keputusan", ""] + [f"- {d['decision']}" for d in m.decisions]
     out += ["", "## Langkah berikutnya", ""] + [f"- {s}" for s in next_steps]
     if m.cost_usd:
@@ -154,13 +178,26 @@ def mom_markdown(m: Meeting, next_steps: list[str], timeline_md: str = "") -> st
     return "\n".join(out)
 
 
+def light_only(svg: str) -> str:
+    """Remove an SVG's dark-mode block: on the projector (a white screen) slides are
+    always light, whatever the computer's theme, so text never ends up dark-on-dark."""
+    key = "@media (prefers-color-scheme"
+    while (i := svg.find(key)) >= 0:
+        j = svg.find("{", i)
+        depth, k = 1, j + 1
+        while depth and k < len(svg):
+            depth += {"{": 1, "}": -1}.get(svg[k], 0)
+            k += 1
+        svg = svg[:i] + svg[k:]
+    return svg
+
+
 def _page(title: str, body_html: str) -> str:
-    """A projector slide: one self-contained HTML page (light and dark)."""
+    """A projector slide: one self-contained HTML page, always light (a white screen)."""
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>{html.escape(title)}</title>
 <style>
-:root{{--bg:#fcfcfb;--t1:#0b0b0b;--t2:#52514e;--rule:#e4e3df;--acc:#2a78d6}}
-@media (prefers-color-scheme:dark){{:root{{--bg:#1a1a19;--t1:#f0efec;--t2:#c3c2b7;--rule:#383835;--acc:#3987e5}}}}
+:root{{color-scheme:light;--bg:#fcfcfb;--t1:#0b0b0b;--t2:#52514e;--rule:#e4e3df;--acc:#2a78d6}}
 body{{margin:0;padding:24px;background:var(--bg);color:var(--t1);
 font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}}
 h1{{font-size:22px;margin:0 0 16px}} .big{{font-size:40px;font-weight:700;color:var(--acc)}}
@@ -188,5 +225,5 @@ def cards(items: list[tuple[str, str]]) -> str:
 
 def _fmt(v) -> str:
     if isinstance(v, float):
-        return f"{v:.4g}"
+        return f"{v:,.0f}" if abs(v) >= 1e4 else f"{v:.4g}"
     return "" if v is None else str(v)

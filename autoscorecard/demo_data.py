@@ -5,6 +5,9 @@ Tables:
     customers     one row per customer: demographics
     bureau        many rows per customer: previous loans with max DPD
     performance   one row per application: max_dpd_12m (the outcome)
+    performance_monthly  many rows per application: DPD at each month on book (mob 1..24,
+                  observed up to 2025-12), consistent with max_dpd_12m, plus some
+                  defaults after month 12; this is what vintage analysis reads
 
 Bad risk is driven by a known hidden score, so tests can check that the engine
 finds the right drivers. `income` and `income_band` are deliberately correlated,
@@ -47,7 +50,44 @@ DEMO_DICTIONARY = [
      "category": "bureau / credit history"},
     {"variable": "max_dpd_12m", "description": "Worst days past due in the 12 months after "
      "booking", "category": "target / performance"},
+    {"variable": "mob", "description": "Months on book (1 = first month after booking)",
+     "category": "target / performance"},
+    {"variable": "dpd", "description": "Days past due at the end of that month on book",
+     "category": "target / performance"},
 ]
+
+AS_OF = pd.Timestamp("2025-12-31")          # the last month the demo performance is observed
+
+
+def monthly_history(apps: pd.DataFrame, max_dpd: np.ndarray, seed: int) -> pd.DataFrame:
+    """DPD per month on book. Bad accounts climb 30 days a month to their 12-month worst;
+    mild ones have one late month; ~3% of the others default after month 12."""
+    rng = np.random.default_rng(seed)
+    months = ((AS_OF.year - apps["app_date"].dt.year) * 12
+              + AS_OF.month - apps["app_date"].dt.month).clip(upper=24).to_numpy()
+    ids, mobs, dpds = [], [], []
+    for app_id, avail, worst in zip(apps["app_id"], months, max_dpd):
+        path = np.zeros(avail, dtype=int)
+        if worst >= 90:                                   # reaches its worst within 12 months
+            steps = int(np.ceil(worst / 30))              # months of climbing to the worst
+            peak = int(rng.integers(steps, 13))           # the month it is at its worst
+            for m in range(1, avail + 1):
+                if m <= peak:                             # 30 days more each month
+                    path[m - 1] = max(worst - 30 * (peak - m), 0)
+                elif m <= 12:
+                    path[m - 1] = worst
+                else:                                     # still unpaid after the first year
+                    path[m - 1] = min(worst + 30 * (m - 12), 360)
+        elif worst > 0:                                   # one late month, then cured
+            path[int(rng.integers(0, 12))] = worst
+        elif avail >= 15 and rng.random() < 0.035:        # defaults after the first year:
+            first = min(10 + int(rng.geometric(0.15)), avail - 2)   # 90+ only after month 12
+            for j in range(avail - first + 1):
+                path[first - 1 + j] = min(30 * (j + 1), 360)
+        ids += [app_id] * avail
+        mobs += list(range(1, avail + 1))
+        dpds += path.tolist()
+    return pd.DataFrame({"app_id": ids, "mob": mobs, "dpd": dpds})
 
 
 def make_demo_data(n: int = 6000, seed: int = 7) -> dict[str, pd.DataFrame]:
@@ -119,4 +159,5 @@ def make_demo_data(n: int = 6000, seed: int = 7) -> dict[str, pd.DataFrame]:
     apps.insert(6, "is_staff_loan", (rng2.random(n) < 0.02).astype(int))   # near-constant
 
     return {"applications": apps, "customers": customers, "bureau": bureau,
-            "performance": performance}
+            "performance": performance,
+            "performance_monthly": monthly_history(apps, max_dpd, seed + 2000)}

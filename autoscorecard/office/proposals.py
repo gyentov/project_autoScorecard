@@ -89,7 +89,7 @@ class Proposals:
         if accept:
             _apply(self.project, p)
         p.status = "accepted" if accept else "rejected"
-        p.decided = _now()
+        p.decided = datetime.now(timezone.utc).isoformat(timespec="microseconds")
         self._write(items)
         self.project.audit(by, "proposal_" + p.status, {"id": p.id, "kind": p.kind,
                                                        "payload": p.payload})

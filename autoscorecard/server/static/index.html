@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AutoScorecard Office</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23ff78be'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+</head>
+<body>
+<header id="hud">
+  <div class="hud-left">
+    <span class="logo">AS<b>lab</b></span>
+    <span id="hud-project" class="muted">belum ada proyek</span>
+    <span id="hud-stage" class="chip"></span>
+  </div>
+  <div class="hud-right">
+    <button id="btn-start" class="primary hidden">Mulai kickoff</button>
+    <button id="btn-meeting" class="primary hidden">Masuk rapat</button>
+    <span id="hud-budget" class="chip" title="Biaya LLM proyek ini / batas"></span>
+    <!-- the feature ribbon -->
+    <nav id="ribbon" aria-label="Fitur">
+      <button id="btn-data" class="rb" title="Serahkan data ke Laras"><i>📁</i><span>Data</span></button>
+      <button id="btn-inbox" class="rb" title="Inbox"><i>✉</i><span>Inbox</span><b id="unread" class="badge hidden">0</b></button>
+      <button id="btn-proposals" class="rb" title="Usulan menunggu ACC"><i>📝</i><span>Usulan</span><b id="pending" class="badge hidden">0</b></button>
+      <button id="btn-timeline" class="rb" title="Timeline"><i>📊</i><span>Timeline</span></button>
+      <button id="btn-orders" class="rb" title="Perintah Boss dan statusnya"><i>📋</i><span>Perintah</span><b id="open-orders" class="badge hidden">0</b></button>
+      <button id="btn-waterfall" class="rb" title="Rencana waterfall: edit sendiri (drag & drop)"><i>📐</i><span>Waterfall</span></button>
+      <button id="btn-board" class="rb" title="Papan: data yang ditunjukkan tim"><i>🖥</i><span>Papan</span></button>
+      <button id="btn-log" class="rb" title="Log percakapan dan biaya"><i>🗄</i><span>Log</span></button>
+      <button id="btn-music" class="rb" title="Musik"><i>🎵</i><span id="music-label">Musik</span></button>
+      <button id="btn-help" class="rb" title="Petunjuk"><i class="sign">!</i><span>Petunjuk</span></button>
+      <button id="btn-projects" class="rb" title="Ganti proyek"><i>⌂</i><span>Proyek</span></button>
+    </nav>
+  </div>
+</header>
+
+<main id="stage">
+  <div id="game"></div>
+  <div id="bubbles"></div>
+  <!-- top-left corner: this session's conversations and their cost -->
+  <div id="corner">
+    <button id="convo" class="pill" title="Buka log percakapan (laci)">
+      <div class="convo-head">💬 Sesi ini <b id="convo-total">$0.0000</b></div>
+      <div id="convo-last" class="muted">Belum ada percakapan.</div>
+    </button>
+  </div>
+  <div id="hover-tip" class="hidden"></div>
+</main>
+
+<div id="toasts"></div>
+
+<!-- desk chat / briefing: portrait + text box -->
+<section id="dialog" class="hidden">
+  <img id="dialog-portrait" alt="">
+  <div class="dialog-box">
+    <div id="dialog-name" class="nametag"></div>
+    <div id="dialog-text"></div>
+    <div id="dialog-choices" class="choices"></div>
+    <form id="dialog-form" class="say">
+      <input id="dialog-input" autocomplete="off" placeholder="Ketik apa saja ke rekanmu…">
+      <button>Kirim</button>
+      <button type="button" id="dialog-close" class="ghost">Tutup</button>
+    </form>
+  </div>
+</section>
+
+<!-- meeting: visual-novel scene -->
+<section id="vn" class="hidden">
+  <div id="vn-bg"></div>
+  <div id="vn-screen"><div id="vn-slide-title"></div><div id="vn-slide"></div></div>
+  <div id="vn-cast"></div>
+  <div id="vn-title"></div>
+  <button id="vn-close" class="ghost">Keluar rapat</button>
+  <div class="vn-box">
+    <div id="vn-name" class="nametag"></div>
+    <div id="vn-text"></div>
+    <div id="vn-next">▼</div>
+    <div id="vn-choices" class="choices"></div>
+    <form id="vn-form" class="say">
+      <input id="vn-input" autocomplete="off" placeholder="Atau ketik bebas: tanya, minta, protes…">
+      <button>Kirim</button>
+    </form>
+  </div>
+</section>
+
+<!-- panels -->
+<section id="panel" class="hidden">
+  <div class="panel-head"><h2 id="panel-title"></h2><button id="panel-close" class="ghost">✕</button></div>
+  <div id="panel-body"></div>
+</section>
+
+<!-- ribbon popovers: music and the help signs -->
+<div id="pop-music" class="pop hidden">
+  <div class="pop-row"><button id="music-toggle" title="Musik on/off">🎵 <span>OFF</span></button>
+    <input id="music-vol" type="range" min="0" max="100" value="35" title="Volume" aria-label="Volume"></div>
+  <select id="music-track" title="Pilih musik" aria-label="Pilih musik"></select>
+  <input id="music-file" type="file" accept="audio/*" class="hidden">
+  <p class="muted">Musik dibuat langsung di browser ($0). "Musik sendiri" memutar file dari komputer Boss.</p>
+</div>
+<div id="pop-help" class="pop hidden">
+  <h3>Petunjuk</h3>
+  <ul class="signs">
+    <li><i class="sign">🚶</i><div><b>Jalan</b>WASD / panah, atau klik lantai.</div></li>
+    <li><i class="sign">💬</i><div><b>Ngobrol</b>Klik rekan, atau berdiri di dekatnya dan tekan E. Sapaan gratis.</div></li>
+    <li><i class="sign">✉</i><div><b>Kotak surat merah</b>Inbox: undangan, MOM, hasil.</div></li>
+    <li><i class="sign">📊</i><div><b>Whiteboard</b>Timeline proyek; oranye = menunggu Boss.</div></li>
+    <li><i class="sign">🗄</i><div><b>Meja Boss</b>Duduk; lacinya = log percakapan dan biaya.</div></li>
+    <li><i class="sign">🚪</i><div><b>Ruang rapat</b>Pintu menyala = rapat siap; masuk ke ruangan.</div></li>
+    <li><i class="sign">📁</i><div><b>Data</b>Serahkan file ke Laras lewat ribbon.</div></li>
+    <li><i class="sign">🖥</i><div><b>Papan</b>Minta tim menunjukkan data di papan, misalnya
+      “sampel 10”, “bad rate per cust_age”, “rata-rata income per cust_province” (gratis), atau tanya bebas.</div></li>
+    <li><i class="sign">⌨</i><div><b>Dialog</b>Spasi / Enter: lanjut. Esc: tutup chat.</div></li>
+  </ul>
+  <p class="muted">Benda yang bisa diklik diberi tanda kecil yang naik-turun.</p>
+  <button id="help-tutorial">▶ Ulangi tutorial Laras</button>
+</div>
+
+<!-- the board: data the team shows the Boss outside meetings -->
+<section id="boardwin" class="hidden" role="dialog" aria-label="Papan">
+  <div class="board-frame">
+    <div class="board-bar">
+      <span>🖥 <b id="board-title"></b> <span id="board-meta" class="muted"></span></span>
+      <span><button id="board-prev" class="ghost" title="Sebelumnya">◀</button>
+        <button id="board-next" class="ghost" title="Berikutnya">▶</button>
+        <button id="board-close" class="ghost">✕</button></span>
+    </div>
+    <iframe id="board-view" title="Papan"></iframe>
+  </div>
+</section>
+
+<!-- the waterfall editor -->
+<section id="wfwin" class="hidden" role="dialog" aria-label="Rencana waterfall">
+  <div class="win wf-win">
+    <div class="win-bar wf-bar"><span>📐 Rencana waterfall</span><button id="wf-close" class="ghost">✕</button></div>
+    <div class="win-body">
+      <p class="muted">Seret ⠿ (atau ↑ ↓) untuk mengubah urutan, matikan langkah, atau ubah parameternya.
+        Ini keputusan Boss sendiri, jadi langsung berlaku tanpa ACC; Citra mengonfirmasi perubahannya.
+        Sesudah Cut 1, perubahan dipakai di cut berikutnya.</p>
+      <div id="wf-list"></div>
+      <select id="wf-add" aria-label="Tambah langkah"></select>
+      <div id="wf-warn" class="wf-warn"></div>
+      <p id="wf-error" class="wf-error"></p>
+    </div>
+    <div class="win-foot">
+      <button id="wf-cancel" class="ghost">Batal</button>
+      <button id="wf-save" class="primary">Simpan rencana</button>
+    </div>
+  </div>
+</section>
+
+<!-- the VL-VH risk levels editor -->
+<section id="lvwin" class="hidden" role="dialog" aria-label="Kategori risiko">
+  <div class="win">
+    <div class="win-bar lv-bar"><span>🎚 Kategori risiko (VH – VL)</span><button id="lv-close" class="ghost">✕</button></div>
+    <div class="win-body">
+      <p class="muted">Pilih kategori tiap kelompok skor. Urutannya harus dari skor rendah (VH, risiko
+        sangat tinggi) ke skor tinggi (VL, risiko sangat rendah). Ini keputusan Boss; Citra akan
+        mengulangi hasilnya di rapat.</p>
+      <div id="lv-list"></div>
+      <div id="lv-sum" class="lv-sum"></div>
+      <p id="lv-error" class="wf-error"></p>
+    </div>
+    <div class="win-foot">
+      <button id="lv-reset" class="ghost">Kembali ke usulan Citra</button>
+      <button id="lv-cancel" class="ghost">Batal</button>
+      <button id="lv-save" class="primary">Simpan kategori</button>
+    </div>
+  </div>
+</section>
+
+<!-- tutorial pointer -->
+<div id="arrow" class="hidden" aria-hidden="true"></div>
+
+<!-- the drawer: the full conversation log with prices -->
+<aside id="drawer" class="hidden">
+  <div class="panel-head"><h2>🗄 Log percakapan</h2><button id="drawer-close" class="ghost">✕</button></div>
+  <div id="drawer-sum" class="muted"></div>
+  <div id="drawer-body"></div>
+</aside>
+
+<!-- handing data to Laras -->
+<section id="datawin" class="hidden" role="dialog" aria-label="Serahkan data ke Laras">
+  <div class="win">
+    <div class="win-bar"><span>📁 Serahkan data ke Laras</span><button id="data-close" class="ghost">✕</button></div>
+    <div class="win-body">
+      <p id="data-laras" class="laras-say hidden"></p>
+      <p class="muted">Centang file yang mau dipakai, lalu serahkan ke Laras. Laras hanya
+        melihat ringkasan (jumlah baris dan kolom), bukan isi barisnya.</p>
+      <div id="data-list"></div>
+      <label id="data-drop" class="drop">
+        <input id="data-upload" type="file" multiple accept=".csv,.tsv,.txt,.xlsx,.xls,.parquet">
+        ⬆ Tambah file dari komputer (CSV, Excel, Parquet), atau tarik ke sini
+      </label>
+      <p id="data-note" class="muted"></p>
+    </div>
+    <div class="win-foot">
+      <button id="data-cancel" class="ghost">Batal</button>
+      <button id="data-give" class="primary">Serahkan ke Laras</button>
+    </div>
+  </div>
+</section>
+
+<div id="stamp" class="hidden"><span>ACC</span></div>
+<div id="projects" class="hidden"></div>
+
+<script type="module" src="/js/main.js"></script>
+</body>
+</html>

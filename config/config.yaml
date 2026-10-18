@@ -64,6 +64,7 @@ providers:
 # Which provider each agent tries first. Then the router walks fallback_chain.
 agents:
   partner: claude_haiku
+  partner_mom: claude_sonnet     # Laras carrying out the MOM: worth a stronger model
   prepper: claude_haiku
   modeller: claude_haiku
   deck_creator: claude_haiku

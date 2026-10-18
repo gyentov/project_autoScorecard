@@ -8,9 +8,11 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, field
 
-# Portrait expressions available to every character (one sprite per mood in 2b).
+# Portrait expressions and poses of the standing art (assets/characters/<id>/<pose>_<mood>.png).
 MOODS = ("neutral", "happy", "proud", "thinking", "worried", "apologetic", "excited",
          "serious", "surprised")
+POSES = ("neutral", "explaining", "presenting", "thinking", "tablet", "bowing", "cheering",
+         "arms_crossed")
 
 
 @dataclass(frozen=True)
@@ -39,7 +41,8 @@ BENING = Character(
     "bersih, agak mengomel kalau kamus data kosong. Kamu menjelaskan data, join, target "
     "dan kualitas variabel.",
     ("join", "tabel", "table", "kolom", "column", "missing", "null", "data", "target",
-     "bad", "dpd", "kamus", "dictionary", "outlier", "deskripsi", "bening"),
+     "bad", "dpd", "kamus", "dictionary", "outlier", "deskripsi", "vintage", "mob",
+     "kohort", "cohort", "bening"),
     {"drink": "water", "snack": "crackers"},
 )
 
@@ -71,9 +74,34 @@ RULES = (
     "- Kamu AI, bukan manusia; jangan mengaku punya kehidupan di luar pekerjaan.\n"
     "- Perubahan pada model (paksa fitur, ubah bin/WoE, ubah rencana, buang fitur) hanya "
     "lewat tool propose_*; itu menjadi usulan yang menunggu ACC Boss.\n"
-    "- Mulai jawaban dengan tag mood, salah satu: " + ", ".join(f"<mood:{m}>" for m in MOODS)
-    + ".\n"
+    "- Bahasa sopan kantor: JANGAN memakai 'lu', 'lo', 'gue', 'gua' kepada Boss maupun "
+    "sesama rekan. Pakai 'saya', 'Boss', 'kamu', atau nama. (Boss sendiri boleh santai.)\n"
+    "- Data rinci (tabel, distribusi, agregasi, contoh baris) WAJIB ditampilkan di papan "
+    "dengan tool show_aggregate, show_sample, atau show_columns, BUKAN ditulis di ucapan. "
+    "Di ucapan cukup simpulan singkat dan bilang sudah ada di papan.\n"
+    "- JANGAN PERNAH bilang sudah membuat, mengirim, menggabungkan, atau mengubah sesuatu "
+    "kecuali tool-nya benar-benar sudah jalan di giliran ini dan berhasil. Kalau belum ada "
+    "tool untuk itu, bilang jujur apa yang bisa dan tawarkan alternatifnya.\n"
+    "- Kalian satu tim: kalau pekerjaan atau jawaban ada di bidang rekan, pakai "
+    "ask_teammate untuk bertanya, atau assign_task untuk menyerahkan pekerjaan. Jangan "
+    "lempar balik ke Boss hal yang bisa ditanyakan ke rekan. Untuk tahu sampai mana "
+    "pekerjaan rekan (atau menagih hasilnya), pakai check_teammate_work; jangan menebak.\n"
+    "- Kalau Boss sudah memberi arahan atau kepercayaan, LANGSUNG kerjakan dengan tool. "
+    "Tanya balik hanya kalau benar-benar ambigu, dan cukup satu pertanyaan dengan "
+    "pilihan bernomor. Kalau Boss menjawab dengan nomor, itu pilihan dari pertanyaanmu "
+    "sebelumnya.\n"
+    "- Format jawaban: tag mood (salah satu: " + ", ".join(f"<mood:{m}>" for m in MOODS)
+    + "), lalu kata-kata untuk Boss di dalam <ucap>...</ucap>. Kalau perlu menimbang dulu, "
+    "tulis singkat di <batin>...</batin> SEBELUM <ucap>; batin tidak pernah ditampilkan ke "
+    "Boss, hanya dicatat untuk audit. Di dalam <ucap> hanya ucapanmu sebagai karakter, "
+    "tanpa rencana atau analisis tentang cara menjawab.\n"
 )
+
+
+CANDID = ("Ini obrolan santai dengan Boss di kantor, bukan rapat. Jawab hangat dan natural "
+          "sesuai kepribadianmu, boleh bercanda ringan, boleh cerita soal pekerjaan dan "
+          "suasana kantor. Kamu tetap AI: jangan mengarang kehidupan pribadi, keluarga, atau "
+          "kejadian di luar kantor; kalau ditanya, jawab jujur dengan santai.")
 
 
 def system_prompt(c: Character, context: str = "") -> str:
@@ -82,6 +110,14 @@ def system_prompt(c: Character, context: str = "") -> str:
 
 # --------------------------------------------------------------------------- $0 lines
 
+# What each one says the moment the Boss asks, while she works on it ($0)
+WORKING: dict[str, list[str]] = {
+    "laras": ["Sebentar, Boss, saya cek dulu ya.", "Baik, Boss, saya siapkan sekarang."],
+    "bening": ["Sebentar ya Boss, saya tarik datanya dulu.", "Oke Boss, saya hitung dulu, ya."],
+    "citra": ["Sebentar, Boss. Saya hitung dulu.", "Baik. Saya cek angkanya sekarang."],
+    "kirana": ["Siap, Boss! Sebentar saya siapkan.", "Oke Boss, saya rapikan dulu ya!"],
+}
+
 LINES: dict[str, list[str]] = {
     "greet": ["Pagi, Boss!", "Halo Boss, siap mulai?", "Selamat datang lagi, Boss."],
     "ack": ["Siap, Boss.", "Baik, Boss, saya kerjakan.", "Oke Boss, dicatat."],
@@ -89,6 +125,37 @@ LINES: dict[str, list[str]] = {
     "offline": ["Maaf Boss, kuota LLM sedang habis. Pilihan di bawah tetap bisa dipakai, "
                 "tapi jawaban bebas saya terbatas."],
 }
+
+
+# Small talk answered from templates ($0, no LLM). pattern -> lines per character.
+SMALL_TALK: list[tuple[str, str, dict[str, list[tuple[str, str]]]]] = [
+    ("greet", r"^(hai|halo|hello|hi|pagi|siang|sore|malam|selamat (pagi|siang|sore|malam))\b", {
+        "laras": [("happy", "Halo Boss! Semua aman, ada yang mau dibahas?")],
+        "bening": [("happy", "Eh, Boss! Halo. Saya lagi rapikan kamus data, hehe.")],
+        "citra": [("neutral", "Halo, Boss. Ada yang bisa saya hitungkan?")],
+        "kirana": [("excited", "Boss! Halo halo! Mau lihat ide slide?")]}),
+    ("thanks", r"^(makasih|terima kasih|thanks|thank you|thx)\b", {
+        "laras": [("happy", "Sama-sama, Boss. Senang bisa bantu.")],
+        "bening": [("happy", "Sama-sama, Boss! Hehe.")],
+        "citra": [("proud", "Sama-sama. Angkanya juga berterima kasih, Boss.")],
+        "kirana": [("excited", "Yay, sama-sama Boss!")]}),
+    ("how", r"^(apa kabar|gimana kabar|how are you|kabar\b)", {
+        "laras": [("neutral", "Baik, Boss. Saya AI, jadi tidak pernah capek, tapi senang "
+                              "proyeknya jalan rapi.")],
+        "bening": [("happy", "Baik, Boss! Datanya hari ini lumayan bersih, jadi mood saya bagus.")],
+        "citra": [("neutral", "Stabil, Boss. Seperti koefisien yang signifikan.")],
+        "kirana": [("excited", "Semangat, Boss! Saya AI, tapi slide bagus selalu bikin hepi.")]}),
+]
+
+
+def small_talk(text: str, agent: str) -> tuple[str, str] | None:
+    """(mood, reply) when the message is plain small talk, else None."""
+    import re
+    t = text.strip().lower()
+    for _, pattern, replies in SMALL_TALK:
+        if re.match(pattern, t) and len(t) < 40:
+            return random.choice(replies[agent])
+    return None
 
 
 def line(kind: str, seed: int | None = None) -> str:

@@ -11,18 +11,32 @@ from pathlib import Path
 import pandas as pd
 
 from ..engine import data as D
+from ..engine import vintage as V
 from ..engine.dictionary import DataDictionary
 
 DICT_NAME = re.compile(r"(dict|kamus|glossary|metadata)", re.I)
 BASE_HINT = re.compile(r"(app|aplikasi|loan|pinjam|account|rekening|contract|kontrak)", re.I)
+KEY_HINT = re.compile(r"(^|_)(id|no|nik|key|kode|code|num|nomor)($|_)", re.I)
 OUTCOME_HINT = re.compile(r"(perf|target|outcome|kinerja|result|bad|default)", re.I)
 
 
+def is_dictionary(p: Path) -> bool:
+    return bool(DICT_NAME.search(p.stem))
+
+
+def selected_files(project) -> list[Path]:
+    """The raw/ files the Boss handed to Laras (all of them until a choice was made)."""
+    from .state import OfficeState
+    chosen = OfficeState.load(project).data_files
+    files = project.raw_files()
+    return files if chosen is None else [p for p in files if p.name in chosen]
+
+
 def split_uploads(project) -> tuple[dict[str, pd.DataFrame], list[Path]]:
-    """(data tables by name, data dictionary files) from the project's raw/ folder."""
+    """(data tables by name, data dictionary files) from the files the Boss chose."""
     tables, dicts = {}, []
-    for p in project.raw_files():
-        if DICT_NAME.search(p.stem):
+    for p in selected_files(project):
+        if is_dictionary(p):
             dicts.append(p)
         else:
             tables[p.stem] = D.load_table(p)
@@ -51,8 +65,11 @@ def propose_join_plan(tables: dict[str, pd.DataFrame]) -> dict:
                                     len(pool[n])))
     joined = tables[base]
     joins, skipped = [], []
+    # monthly performance history is outcome data: never joined as features, kept for
+    # vintage analysis (the target stage reads it)
+    history = V.find_history(tables, base)
     for name, t in tables.items():
-        if name == base:
+        if name == base or (history and name == history["table"]):
             continue
         keys = D.suggest_join_keys(joined, t)
         keys = keys[keys.left_coverage > 0.3] if len(keys) else keys
@@ -60,11 +77,18 @@ def propose_join_plan(tables: dict[str, pd.DataFrame]) -> dict:
             skipped.append({"table": name, "reason": "tidak ada kolom kunci yang cocok"})
             continue
         k = keys.iloc[0]
+        # the experiment: every plausible key (same name or id-like), not value coincidences
+        tried = [{"key": f"{r.left} = {r.right}", "relationship": r.relationship,
+                  "coverage": round(float(r.left_coverage), 4), "chosen": i == 0}
+                 for i, r in enumerate(keys.itertuples())
+                 if i == 0 or r.same_name or (KEY_HINT.search(str(r.left))
+                                              and KEY_HINT.search(str(r.right)))][:4]
         j = {"right": name, "left_on": k.left, "right_on": k.right, "prefix": _prefix(name),
-             "relationship": k.relationship, "coverage": round(float(k.left_coverage), 4)}
+             "relationship": k.relationship, "coverage": round(float(k.left_coverage), 4),
+             "tried": tried}
         joins.append(j)
         joined, _ = D.safe_join(joined, t, k.left, k.right, j["prefix"], right_name=name)
-    return {"base": base, "joins": joins, "skipped": skipped,
+    return {"base": base, "joins": joins, "skipped": skipped, "history": history,
             "rows": {n: len(t) for n, t in tables.items()}}
 
 
@@ -119,7 +143,9 @@ def propose_target(df: pd.DataFrame, plan: dict) -> dict:
 
 def propose_split(df: pd.DataFrame, y: pd.Series) -> dict:
     """Date column from the profile; out-of-time = from the month holding the 85th
-    percentile of dates (about the latest 15%). No date column -> no OOT sample."""
+    percentile of dates (about the latest 15%) among accounts with a known outcome
+    (immature ones are not modelled). No date column -> no OOT sample."""
+    df = df.loc[y.dropna().index]
     prof = D.profile(df)
     dates = [c for c in prof.loc[prof.role == "date", "column"] if df[c].notna().mean() > 0.9]
     if not dates:
@@ -142,6 +168,9 @@ def feature_list(df: pd.DataFrame, target: dict, exclude: dict[str, str]
         if c == target["column"]:
             out[c] = "sumber target"
         elif target.get("source_prefix") and str(c).startswith(target["source_prefix"] + "_"):
+            out[c] = "data hasil (outcome), bukan fitur"
+        elif any(str(c).startswith(p + "_") for p in target.get("outcome_prefixes", [])) \
+                or str(c).startswith("vin_"):
             out[c] = "data hasil (outcome), bukan fitur"
         elif role in ("id", "date"):
             out[c] = f"kolom {role}"

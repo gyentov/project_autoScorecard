@@ -2,15 +2,22 @@
 finalization inputs and confirmation, and the office (meetings, inbox, events).
 
 Run:  .venv/bin/uvicorn autoscorecard.server.app:app --reload
+Then open http://127.0.0.1:8000/ for the office (static/ + assets/).
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
+import pandas as pd
 from fastapi import FastAPI, HTTPException, Response, UploadFile
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from autoscorecard import __version__
 from autoscorecard.config import load_settings
+from autoscorecard.demo_data import DEMO_DICTIONARY, make_demo_data
 from autoscorecard.engine import finalization as fin
 from autoscorecard.engine.dictionary import DataDictionary
 from autoscorecard.engine.waterfall import (STEP_TYPES, approve_plan, load_plan, parse_steps,
@@ -21,6 +28,8 @@ from autoscorecard.office import Office
 from autoscorecard.office.timeline import gantt_svg
 from autoscorecard.store import ProjectStore
 
+ROOT = Path(__file__).resolve().parents[2]
+STATIC = Path(__file__).resolve().parent / "static"
 ALLOWED_EXT = {".csv", ".xlsx", ".xls", ".parquet", ".tsv", ".txt"}
 
 settings = load_settings()
@@ -35,9 +44,13 @@ class NewProject(BaseModel):
     model_type: str = "scorecard"
 
 
+# what this server can do; the page checks it to notice a server started before an update
+FEATURES = ["data_handover", "conversations", "adjourn", "trash"]
+
+
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": __version__}
+    return {"ok": True, "version": __version__, "features": FEATURES}
 
 
 @app.get("/api/llm/status")
@@ -65,6 +78,32 @@ def create_project(body: NewProject):
     if body.model_type != "scorecard":
         raise HTTPException(400, "Only 'scorecard' is supported for now")
     return store.create(body.name, body.model_type).meta
+
+
+@app.delete("/api/projects/{pid}")
+def delete_project(pid: str):
+    """Moves the project to projects/.trash/ (not erased; move it back to restore)."""
+    try:
+        store.trash(pid)
+    except KeyError:
+        raise HTTPException(404, "project not found")
+    _OFFICES.pop(pid, None)
+    return {"trashed": pid}
+
+
+@app.post("/api/demo")
+def create_demo():
+    """A new project filled with the synthetic demo data (no real people)."""
+    proj = store.create("Demo - kredit sintetis")
+    names = []
+    for name, t in make_demo_data().items():
+        t.to_csv(proj.dir("raw") / f"{name}.csv", index=False)
+        names.append(f"{name}.csv")
+    pd.DataFrame(DEMO_DICTIONARY).to_csv(proj.dir("raw") / "data_dictionary.csv", index=False)
+    names.append("data_dictionary.csv")
+    # the data window labels these as default (synthetic) data the Boss can remove
+    (proj.dir("work") / "default_files.json").write_text(json.dumps(names), encoding="utf-8")
+    return {"id": proj.id, "name": proj.meta.name}
 
 
 @app.post("/api/projects/{pid}/upload")
@@ -251,6 +290,7 @@ class BossSays(BaseModel):
     meeting_id: str | None = None
     to: str | None = None          # laras / bening / citra, else routed by keywords
     cost_ok: bool = False          # the Boss agreed to Laras's estimate
+    candid: bool = False           # relaxed chat at a desk, not a meeting
 
 
 class Decision(BaseModel):
@@ -304,11 +344,13 @@ def inbox_read(pid: str, eid: str):
 
 @app.get("/api/projects/{pid}/files/{path:path}")
 def project_file(pid: str, path: str):
-    """Attachments and slides. Only files inside the project's artifacts/ and
-    work/meetings/ folders, never raw data."""
+    """Attachments, slides and board pages. Only files inside the project's artifacts/,
+    work/meetings/ and work/board/ folders, never the raw uploads. (Board pages can hold
+    the sample rows the Boss asked to see; they go to the Boss's browser, not to a model.)"""
     proj = _project(pid)
     f = (proj.root / path).resolve()
-    allowed = [(proj.root / "artifacts").resolve(), (proj.root / "work" / "meetings").resolve()]
+    allowed = [(proj.root / "artifacts").resolve(), (proj.root / "work" / "meetings").resolve(),
+               (proj.root / "work" / "board").resolve()]
     if not any(f.is_relative_to(a) for a in allowed) or not f.is_file():
         raise HTTPException(404, "file not found")
     return FileResponse(f)
@@ -342,11 +384,75 @@ def meeting_choose(pid: str, mid: str, cid: str):
 def office_say(pid: str, body: BossSays):
     """Free typing, in a meeting (meeting_id) or at an agent's desk."""
     try:
-        return _office(pid).say(body.text, body.meeting_id, body.to, body.cost_ok)
+        return _office(pid).say(body.text, body.meeting_id, body.to, body.cost_ok, body.candid)
     except KeyError:
         raise HTTPException(404, "meeting not found")
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+
+class OrderUpdate(BaseModel):
+    status: str
+    note: str = ""
+
+
+@app.get("/api/projects/{pid}/orders")
+def orders_list(pid: str):
+    """The Boss's orders and messages, with owner and status."""
+    return _office(pid).orders.list()
+
+
+@app.post("/api/projects/{pid}/orders/{oid}")
+def order_update(pid: str, oid: int, body: OrderUpdate):
+    try:
+        return _office(pid).orders.update(oid, body.status, body.note)
+    except KeyError:
+        raise HTTPException(404, "order not found")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+class RiskLevels(BaseModel):
+    cut: str
+    labels: list[str]
+
+
+@app.get("/api/projects/{pid}/office/risk-levels")
+def risk_levels_get(pid: str, cut: str):
+    try:
+        return _office(pid).risk_levels(cut)
+    except KeyError:
+        raise HTTPException(404, "no risk bands for that cut yet")
+
+
+@app.put("/api/projects/{pid}/office/risk-levels")
+def risk_levels_put(pid: str, body: RiskLevels):
+    """The Boss sets the VL-VH grouping of the score bands (after discussing with Citra)."""
+    try:
+        return _office(pid).edit_risk_levels(body.cut, body.labels)
+    except KeyError:
+        raise HTTPException(404, "no risk bands for that cut yet")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.put("/api/projects/{pid}/office/waterfall")
+def office_edit_waterfall(pid: str, body: WaterfallPlan):
+    """The Boss's own edit of the waterfall (drag & drop editor): applies at once,
+    Citra confirms the changes, the plan meeting's slides are rebuilt."""
+    try:
+        return _office(pid).edit_waterfall(body.steps)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/projects/{pid}/office/route")
+def office_route(pid: str, body: BossSays):
+    """Instant and free: who will answer this, and what she says while she works on it."""
+    try:
+        return _office(pid).who_answers(body.text, body.meeting_id, body.to)
+    except KeyError:
+        raise HTTPException(404, "meeting not found")
 
 
 @app.post("/api/projects/{pid}/proposals/{prop}")
@@ -357,3 +463,57 @@ def proposal_decide(pid: str, prop: str, body: Decision):
         raise HTTPException(404, "proposal not found")
     except ValueError as e:
         raise HTTPException(409, str(e))
+
+
+@app.get("/api/projects/{pid}/conversations")
+def conversations(pid: str, since: str | None = None, audit: bool = False):
+    """The conversation log with what each exchange cost. The agents' private thinking
+    (`thought`) is only included with audit=true."""
+    log = _office(pid).conversations
+    items = log.list(since, audit)
+    return {"items": items, "total_usd": round(sum(i.get("usd") or 0 for i in items), 6),
+            "project_total_usd": log.total_usd()}
+
+
+@app.get("/api/projects/{pid}/board")
+def board_items(pid: str):
+    """Everything the team has put on the board (tables, charts, sample rows)."""
+    return _office(pid).board.list()
+
+
+class Handover(BaseModel):
+    files: list[str]
+
+
+@app.get("/api/projects/{pid}/data")
+def data_files(pid: str):
+    """The project's files: name, kind, rows and columns (no rows), and which are in use."""
+    return _office(pid).data_files()
+
+
+@app.post("/api/projects/{pid}/data/remove")
+def data_remove(pid: str, body: Handover):
+    """Take files out of the project (moved to work/removed/, not erased)."""
+    try:
+        return _office(pid).remove_data(body.files)
+    except KeyError as e:
+        raise HTTPException(404, f"file not found: {e}")
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+
+
+@app.post("/api/projects/{pid}/data/handover")
+def data_handover(pid: str, body: Handover):
+    try:
+        return _office(pid).hand_over_data(body.files)
+    except KeyError as e:
+        raise HTTPException(404, f"file not found: {e}")
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+
+
+# --------------------------------------------------------------------------- the office UI (2b)
+# Mounted last so the /api routes above win.
+app.mount("/assets", StaticFiles(directory=ROOT / "assets"), name="assets")
+if STATIC.exists():
+    app.mount("/", StaticFiles(directory=STATIC, html=True), name="ui")

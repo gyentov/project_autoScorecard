@@ -102,10 +102,23 @@ class ProjectStore:
 
     def get(self, pid: str) -> Project:
         root = self.base / safe_filename(pid)
+        if root.name.startswith("."):
+            raise KeyError(pid)
         if not (root / "project.json").exists():
             raise KeyError(pid)
         return Project(root)
 
     def list(self) -> list[ProjectMeta]:
         return [Project(p).meta for p in sorted(self.base.iterdir())
-                if (p / "project.json").exists()]
+                if not p.name.startswith(".") and (p / "project.json").exists()]
+
+    def trash(self, pid: str) -> Path:
+        """Remove a project from the list by moving it to <base>/.trash/ (recoverable:
+        move the folder back to restore it)."""
+        proj = self.get(pid)
+        dest = self.base / ".trash" / proj.id
+        dest.parent.mkdir(exist_ok=True)
+        if dest.exists():
+            shutil.rmtree(dest)
+        shutil.move(str(proj.root), dest)
+        return dest
