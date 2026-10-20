@@ -91,8 +91,7 @@ def delete_project(pid: str):
     return {"trashed": pid}
 
 
-@app.post("/api/demo")
-def create_demo():
+def new_demo_project():
     """A new project filled with the synthetic demo data (no real people)."""
     proj = store.create("Demo - kredit sintetis")
     names = []
@@ -103,6 +102,19 @@ def create_demo():
     names.append("data_dictionary.csv")
     # the data window labels these as default (synthetic) data the Boss can remove
     (proj.dir("work") / "default_files.json").write_text(json.dumps(names), encoding="utf-8")
+    return proj
+
+
+def ensure_demo() -> None:
+    """The browser build starts each browser empty: give it the demo project, so the
+    synthetic data is always there to try (again after every project was removed)."""
+    if not store.list():
+        new_demo_project()
+
+
+@app.post("/api/demo")
+def create_demo():
+    proj = new_demo_project()
     return {"id": proj.id, "name": proj.meta.name}
 
 

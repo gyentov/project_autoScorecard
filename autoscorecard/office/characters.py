@@ -124,7 +124,15 @@ LINES: dict[str, list[str]] = {
     "working": ["Sebentar ya Boss, sedang saya kerjakan.", "Lagi diproses, Boss."],
     "offline": ["Maaf Boss, kuota LLM sedang habis. Pilihan di bawah tetap bisa dipakai, "
                 "tapi jawaban bebas saya terbatas."],
+    "offline_access": ["Maaf Boss, akses ke LLM ditolak (bukan kuota yang habis). Biasanya email "
+                       "Boss belum diizinkan di Worker (ALLOWED_EMAILS) atau sesi Access sudah "
+                       "kedaluwarsa; muat ulang halaman setelah dibereskan."],
+    "offline_no_key": ["Maaf Boss, LLM belum tersambung (bukan kuota yang habis): kunci API "
+                       "tidak terbaca dari Worker. Pilihan di bawah tetap bisa dipakai."],
 }
+
+# router.offline_cause() -> the line that says it
+OFFLINE_LINES = {"quota": "offline", "access": "offline_access", "no_key": "offline_no_key"}
 
 
 # Small talk answered from templates ($0, no LLM). pattern -> lines per character.

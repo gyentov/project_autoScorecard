@@ -25,7 +25,13 @@ README) keeps working unchanged; this is a second way to run it.
   pyarrow, pydantic, FastAPI). The first visit downloads it (about 30-60 s), then the
   browser caches it.
 - **Your data stays in your browser.** Uploads and projects are stored in that browser's
-  IndexedDB. Another browser or computer starts empty, and clearing site data erases them.
+  IndexedDB. Another browser or computer starts with just the demo project, and clearing
+  site data erases them. Storage is per address: `<hash>.autoscorecard.pages.dev` (the
+  link of one deployment) is a different address from `autoscorecard.pages.dev`, so its
+  projects are separate. Share the main address only.
+- **Offline mode says why.** If the team answers without LLM, the reason is shown at the
+  bottom of the page (e.g. `access denied: email not allowed`) and in the agents' reply;
+  "kuota habis" means the budget or a provider's credit is really used up.
 - **Only the Worker sees API keys.** The browser asks the Worker which key *names* exist
   and never receives a value.
 - **Long jobs block the page while they run.** Model builds run inside the request
@@ -81,7 +87,7 @@ is skipped; offline mode always works.
 | `OPENROUTER_API_KEY` | OpenRouter |
 | `ACCESS_TEAM_DOMAIN` | your Zero Trust team domain, e.g. `myteam.cloudflareaccess.com` |
 | `ACCESS_AUD` | the Audience (AUD) tag of the site's Access application |
-| `ALLOWED_EMAILS` | your email (comma-separated list); the Worker re-checks it |
+| `ALLOWED_EMAILS` | who may use the LLM: emails, comma-separated; `@company.com` allows a whole domain. The Worker re-checks it, so **everyone in the Access policy must be here too**, or they get offline mode. Leave it unset to trust the Access policy alone |
 
 Without `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` the deployed Worker refuses every call: it
 fails closed.

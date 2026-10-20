@@ -48,7 +48,7 @@ class CostEstimate:
     def say(self) -> str:
         """How Laras says it."""
         if self.provider == "offline":
-            return ("Semua kuota LLM sedang tidak tersedia, Boss. Bagian ini jalan tanpa LLM, "
+            return ("LLM sedang tidak bisa dipakai, Boss. Bagian ini jalan tanpa LLM, "
                     "biaya $0.")
         if self.free:
             return f"Gratis, Boss: pakai {self.provider} ({self.model}), tier gratis."

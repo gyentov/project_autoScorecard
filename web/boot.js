@@ -26,6 +26,8 @@ async function controlled() {
 async function main() {
   say("Memasang service worker...");
   await controlled();
+  // projects live in IndexedDB; without this the browser may evict them when space runs low
+  try { await navigator.storage?.persist?.(); } catch { /* best effort */ }
   const python = new Worker("/web/py-worker.js", { type: "module" });
   const waiting = new Map();
   let next = 0;
@@ -49,8 +51,17 @@ async function main() {
   navigator.serviceWorker.startMessages();
   const info = await ready;
   window.AUTOSCORECARD_WEB = info;          // version and LLM status, for debugging
-  if (info.llm?.note) console.warn(info.llm.note);
   overlay.remove();
+  if (info.llm?.note) {                     // say it on the page: "offline" is not always "quota used up"
+    console.warn(info.llm.note);
+    const bar = document.createElement("div");
+    bar.style.cssText = "position:fixed;left:0;right:0;bottom:0;z-index:9998;padding:8px 16px;"
+      + "background:#5a2d22;color:#ffe9e1;font:13px/1.4 ui-sans-serif,system-ui,sans-serif;cursor:pointer";
+    bar.title = "Klik untuk menutup";
+    bar.textContent = info.llm.note;
+    bar.onclick = () => bar.remove();
+    document.body.appendChild(bar);
+  }
   await import("/js/main.js");
 }
 

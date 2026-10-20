@@ -11,7 +11,6 @@ const PACKAGES = ["numpy", "pandas", "pyarrow", "pydantic", "pyyaml", "fastapi",
 let py = null;
 let serve = null;
 let queue = Promise.resolve();           // one request at a time, in arrival order
-let saving = null;
 
 const status = (text) => postMessage({ type: "status", text });
 
@@ -33,21 +32,17 @@ function syncfs(populate) {
     py.FS.syncfs(populate, (err) => (err ? reject(err) : resolve())));
 }
 
-function persistSoon() {                 // write /data back to IndexedDB after changes
-  if (saving) return;
-  saving = setTimeout(async () => {
-    saving = null;
-    try { await syncfs(false); } catch (e) { console.error("menyimpan proyek gagal", e); }
-  }, 300);
-}
-
 async function llmKeys() {
   try {
     const r = await fetch("/llm/status", { credentials: "include" });
-    if (!r.ok) throw new Error(r.status);
+    if (!r.ok) {                         // the Worker says why (e.g. "access denied: email not allowed")
+      let why = String(r.status);
+      try { why += ": " + ((await r.json()).error?.message || ""); } catch { /* not JSON */ }
+      throw new Error(why);
+    }
     return await r.json();
   } catch (e) {
-    return { keys: [], note: `LLM Worker tidak terjangkau (${e.message}); tim memakai mode offline ($0).` };
+    return { keys: [], note: `LLM tidak tersambung (${e.message}); tim memakai mode offline ($0).` };
   }
 }
 
@@ -91,7 +86,11 @@ async function answer(req) {
     req.body ? new Uint8Array(req.body) : null);
   const out = r.toJs({ dict_converter: Object.fromEntries });
   r.destroy();
-  if (req.method !== "GET" && req.method !== "HEAD") persistSoon();
+  // write /data back to IndexedDB before answering, so a change the page has seen is
+  // saved even if the tab closes right after (a delayed save lost new demo projects)
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    try { await syncfs(false); } catch (e) { console.error("menyimpan proyek gagal", e); }
+  }
   const body = out.body.buffer.slice(out.body.byteOffset, out.body.byteOffset + out.body.byteLength);
   return { status: out.status, headers: JSON.parse(out.headers), body };
 }

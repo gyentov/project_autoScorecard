@@ -7,7 +7,8 @@ are unpacked under /app and the browser's own storage is mounted at /data.
   through the Worker at `proxy_url`;
 - keys: the key names the Worker holds (e.g. ANTHROPIC_API_KEY). Each gets a marker
   value so the router sees the provider as available. The real keys never reach here;
-- post: the synchronous XMLHttpRequest the proxy provider uses.
+- post: the synchronous XMLHttpRequest the proxy provider uses;
+- a browser with no projects gets the demo project (synthetic data) right away.
 """
 from __future__ import annotations
 
@@ -43,7 +44,8 @@ def setup(proxy_url: str, keys: list[str], post=None):
         proxy.POST = post
     run_threads_inline()
     (DATA / "projects").mkdir(parents=True, exist_ok=True)
-    from autoscorecard.server.app import app
+    from autoscorecard.server.app import app, ensure_demo
+    ensure_demo()
     return app
 
 

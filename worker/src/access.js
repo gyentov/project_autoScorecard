@@ -6,7 +6,8 @@
 // the issuer and the expiry, and, when ALLOWED_EMAILS is set, the email.
 //
 // Settings (wrangler secrets): ACCESS_TEAM_DOMAIN (e.g. myteam.cloudflareaccess.com),
-// ACCESS_AUD (the application's Audience tag), optional ALLOWED_EMAILS (comma separated).
+// ACCESS_AUD (the application's Audience tag), optional ALLOWED_EMAILS (comma separated;
+// an entry like "@company.com" allows the whole domain).
 // REQUIRE_ACCESS = "false" turns the check off, for `wrangler dev` on your machine only.
 
 let certs = { at: 0, keys: [] };
@@ -53,7 +54,9 @@ export async function verifyAccess(request, env, fetchFn = fetch) {
   if (!payload.exp || payload.exp * 1000 < Date.now()) return deny("token expired");
   if (env.ALLOWED_EMAILS) {
     const allowed = env.ALLOWED_EMAILS.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
-    if (!allowed.includes(String(payload.email || "").toLowerCase())) return deny("email not allowed");
+    const email = String(payload.email || "").toLowerCase();
+    const ok = allowed.some((a) => (a.startsWith("@") ? email.endsWith(a) : email === a));
+    if (!ok) return deny(`email not allowed (${email || "no email"}): add it to ALLOWED_EMAILS`);
   }
   return null;
 }

@@ -104,3 +104,15 @@ def test_bridge_answers_like_the_server():
     assert r["status"] == 400 and "scorecard" in json.loads(r["body"])["detail"]
     r = asyncio.run(handle(app, "GET", "http://site/api/projects/none/files/x?y=1", []))
     assert r["status"] == 404
+
+
+def test_browser_gets_the_demo_project_when_it_has_none(tmp_path, monkeypatch):
+    import autoscorecard.server.app as appmod
+    from autoscorecard.store import ProjectStore
+    monkeypatch.setattr(appmod, "store", ProjectStore(tmp_path))
+    appmod.ensure_demo()
+    (p,) = appmod.store.list()
+    raw = {f.name for f in appmod.store.get(p.id).raw_files()}
+    assert {"applications.csv", "performance.csv", "data_dictionary.csv"} <= raw
+    appmod.ensure_demo()                                    # not a second one
+    assert len(appmod.store.list()) == 1

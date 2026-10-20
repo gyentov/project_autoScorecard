@@ -94,6 +94,19 @@ class LLMRouter:
                 return f"project budget ${b.per_project_usd:.2f} reached"
         return None
 
+    def offline_cause(self, project_id: str | None = None) -> str:
+        """Why no real LLM can answer: 'quota' (budget or credit used up), 'access' (the
+        provider or the Worker refused us), 'no_key' (no key reachable), '' (one can)."""
+        reasons = [self.skip_reason(n, project_id) for n, c in self.settings.providers.items()
+                   if c.type != "offline"]
+        if not reasons or any(r is None for r in reasons):
+            return ""
+        if any(r.startswith(("OutOfCredit", "total budget", "project budget")) for r in reasons):
+            return "quota"
+        if any(r.startswith("AuthFailed") for r in reasons):
+            return "access"
+        return "no_key"
+
     def status(self) -> list[dict[str, Any]]:
         return [
             {"name": n, "type": c.type, "model": c.model, "free": c.price.is_free,
@@ -113,7 +126,7 @@ class LLMRouter:
             try:
                 resp = self._try_provider(name, req)
             except (OutOfCredit, AuthFailed) as e:
-                self._disabled[name] = type(e).__name__
+                self._disabled[name] = f"{type(e).__name__}: {e}"
                 self.on_event({"type": "provider_disabled", "provider": name, "reason": str(e)})
                 errors.append(str(e))
                 continue

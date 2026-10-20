@@ -118,3 +118,18 @@ test("Access token: signature, audience, issuer, expiry and email are all checke
   assert.match(await why(t.slice(0, -4) + "AAAA"), /bad signature/);
   assert.match(await (await verifyAccess(req(t), {}, certs)).text(), /not configured/);   // fails closed
 });
+
+test("ALLOWED_EMAILS takes whole domains as @domain", async () => {
+  resetCertCache();
+  const { sign, certs } = await signer();
+  const env = { ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.com", ACCESS_AUD: "aud123",
+    ALLOWED_EMAILS: "boss@example.com, @bank.co.id" };
+  const tok = (email) => sign({ aud: "aud123", iss: "https://team.cloudflareaccess.com",
+    exp: Date.now() / 1000 + 60, email });
+  const req = async (email) => new Request("https://site/llm/status",
+    { headers: { "cf-access-jwt-assertion": await tok(email) } });
+  assert.equal(await verifyAccess(await req("analis@bank.co.id"), env, certs), null);
+  assert.equal(await verifyAccess(await req("boss@example.com"), env, certs), null);
+  const denied = await verifyAccess(await req("x@notbank.co.id"), env, certs);
+  assert.match((await denied.json()).error.message, /email not allowed \(x@notbank\.co\.id\)/);
+});

@@ -23,7 +23,7 @@ from ..llm import LLMRequest, Message, ToolResult
 from ..llm.router import AllProvidersFailed
 from . import board as B
 from . import costs
-from .characters import MOODS, TEAM, WORKING, line, small_talk, system_prompt
+from .characters import MOODS, OFFLINE_LINES, TEAM, WORKING, line, small_talk, system_prompt
 from .tools import ToolBox
 
 AGENT_KEY = {"laras": "partner", "bening": "prepper", "citra": "modeller",
@@ -94,6 +94,12 @@ def route(text: str, default: str = "laras") -> str:
             for cid, c in TEAM.items() if cid != "kirana"}
     best = max(hits, key=hits.get)
     return best if hits[best] else default
+
+
+def offline_line(office) -> str:
+    """The apology for a reply without LLM, naming the real cause: an access refusal or a
+    missing key is not "quota used up"."""
+    return line(OFFLINE_LINES.get(office.router.offline_cause(office.project.id), "offline"))
 
 
 # "show me" shortcuts ($0, no LLM): sample rows and simple aggregates, on the board
@@ -468,7 +474,7 @@ class AgentRuntime:
         est = costs.estimate(office.router, AGENT_KEY[agent], chars, office.project,
                              max_out=500, max_calls=3)
         if est.provider == "offline":
-            return AgentReply(agent, line("offline"), "apologetic", offline=True,
+            return AgentReply(agent, offline_line(office), "apologetic", offline=True,
                               estimate=est.to_dict(), kind="offline")
         if not est.affordable:
             return AgentReply("laras", est.say() + " Saya tahan dulu pertanyaan ini, Boss.",
@@ -492,7 +498,7 @@ class AgentRuntime:
                 total += resp.cost_usd
                 provider = resp.provider
                 if resp.provider == "offline":
-                    return AgentReply(agent, line("offline"), "apologetic", box.created,
+                    return AgentReply(agent, offline_line(office), "apologetic", box.created,
                                       offline=True, kind="offline")
                 if not resp.tool_calls:
                     if not nudged and not last and self.promises(resp.text) and not box.acted():
@@ -510,7 +516,7 @@ class AgentRuntime:
                     results.append(ToolResult(c.id, *box.call(c.name, c.args)))
                 msgs.append(Message("user", results))
         except AllProvidersFailed:
-            return AgentReply(agent, line("offline"), "apologetic", box.created, offline=True,
+            return AgentReply(agent, offline_line(office), "apologetic", box.created, offline=True,
                               kind="offline")
         finally:
             office.events.emit("agent_status", agent, status="idle", task="")

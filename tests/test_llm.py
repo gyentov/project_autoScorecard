@@ -89,6 +89,20 @@ def test_out_of_credit_falls_back_and_disables(tmp_path):
     assert any(e["type"] == "provider_disabled" for e in events)
 
 
+def test_offline_cause_tells_a_refusal_from_used_up_quota(tmp_path):
+    from autoscorecard.llm.base import AuthFailed
+    r, _, _ = make_router(tmp_path, {"paid": [AuthFailed("paid", "access denied: email not allowed")],
+                                     "free": [AuthFailed("free", "access denied: email not allowed")]})
+    assert r.offline_cause() == ""
+    assert r.complete(REQ).provider == "offline"
+    assert r.offline_cause() == "access"                       # not "kuota habis"
+    assert "email not allowed" in r.skip_reason("paid", None)
+    r, _, _ = make_router(tmp_path, {"free": [OutOfCredit("free", "You exceeded your current quota")]},
+                          budget=0)
+    r.complete(REQ)
+    assert r.offline_cause() == "quota"
+
+
 def test_rate_limit_retries_then_succeeds(tmp_path):
     r, provs, events = make_router(tmp_path, {"paid": [RateLimited("paid", "429", 1.0), "hello"]})
     resp = r.complete(REQ)
