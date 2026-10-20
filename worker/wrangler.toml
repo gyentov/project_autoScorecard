@@ -8,6 +8,10 @@ compatibility_date = "2026-09-30"
 workers_dev = false
 preview_urls = false
 
+# Every push redeploys this Worker; without this, `wrangler deploy` deletes variables
+# added in the dashboard as type Text (API keys, ALLOWED_EMAILS). Secrets are kept anyway.
+keep_vars = true
+
 [vars]
 REQUIRE_ACCESS = "true"     # `npm run dev:worker` turns this off on your machine only
 
