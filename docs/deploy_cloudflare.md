@@ -68,8 +68,10 @@ Tests: `npm run test:worker` (Worker) and `.venv/bin/python -m pytest` (Python, 
 
 ## Secrets for the Worker
 
-Set each with `npx wrangler secret put <NAME> -c worker/wrangler.toml` and type the value
-when asked. A provider whose key is missing is skipped (offline mode always works).
+Set each in the dashboard (**Workers & Pages → autoscorecard-llm → Settings → Variables and
+Secrets → Add**, type **Secret**), or from a terminal with
+`npx wrangler secret put <NAME> -c worker/wrangler.toml`. A provider whose key is missing
+is skipped; offline mode always works.
 
 | name | what |
 |---|---|
@@ -84,22 +86,25 @@ when asked. A provider whose key is missing is skipped (offline mode always work
 Without `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` the deployed Worker refuses every call: it
 fails closed.
 
-## Deploy (one time)
+## Deploy (one time, all in the Cloudflare dashboard)
 
-1. `npx wrangler login`
-2. `npx wrangler d1 create autoscorecard`, then put the printed `database_id` into
-   `worker/wrangler.toml`. The `usage` table creates itself on first use.
-3. Set the secrets above.
-4. `npm run deploy:worker` (first deploy of the Worker)
-5. In the dashboard, under **Workers & Pages → Create → Pages → Connect to Git**, pick this
-   repo, production branch `main`, build command `npm ci && npm run build`, output
-   directory `dist`. The service binding comes from `wrangler.toml`.
-6. In **Workers & Pages → autoscorecard-llm → Settings → Builds → Connect**, pick this repo
-   with root directory `/` and deploy command `npm run deploy:worker`. From then on a push
-   to `main` redeploys both the site and the Worker.
-7. In **Zero Trust → Access → Applications → Add → Self-hosted**, add the hostnames
+Nothing has to run on your computer: Cloudflare builds and deploys from GitHub.
+
+1. **Storage & Databases → D1 → Create Database** named `autoscorecard`. Its id goes in
+   `worker/wrangler.toml` (already set for this project). The `usage` table creates
+   itself on first use.
+2. Merge the code into `main`.
+3. **Workers & Pages → Create → Workers → Import a repository**: this repo, Worker name
+   `autoscorecard-llm` (must match `worker/wrangler.toml`), root directory `/`, deploy
+   command `npm run deploy:worker`.
+4. Add the secrets above to that Worker.
+5. **Workers & Pages → Create → Pages → Connect to Git**: this repo, production branch
+   `main`, build command `npm ci && npm run build`, output directory `dist`. The service
+   binding to the Worker comes from `wrangler.toml`.
+6. **Zero Trust → Access → Applications → Add → Self-hosted**: hostnames
    `autoscorecard.pages.dev` and `*.autoscorecard.pages.dev` (preview deployments), with a
    policy that allows only your email. Copy its AUD tag into the `ACCESS_AUD` secret.
 
-The Worker has no public URL (`workers_dev = false`), so the only way in is through the
-site, which Access guards; the Worker verifies Access's token itself as well.
+From then on, every push to `main` redeploys both the site and the Worker. The Worker has
+no public URL (`workers_dev = false`), so the only way in is through the site, which
+Access guards; the Worker also verifies Access's token itself.

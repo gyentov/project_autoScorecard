@@ -14,4 +14,4 @@ REQUIRE_ACCESS = "true"     # `npm run dev:worker` turns this off on your machin
 [[d1_databases]]
 binding = "DB"
 database_name = "autoscorecard"
-database_id = "00000000-0000-0000-0000-000000000000"   # replace with the id from `wrangler d1 create`
+database_id = "f03164a7-838f-4692-ba6a-67389689e75f"
