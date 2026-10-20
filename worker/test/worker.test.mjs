@@ -119,6 +119,18 @@ test("Access token: signature, audience, issuer, expiry and email are all checke
   assert.match(await (await verifyAccess(req(t), {}, certs)).text(), /not configured/);   // fails closed
 });
 
+test("the Access token is also read from the CF_Authorization cookie", async () => {
+  resetCertCache();
+  const { sign, certs } = await signer();
+  const env = { ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.com", ACCESS_AUD: "aud123" };
+  const t = await sign({ aud: "aud123", iss: "https://team.cloudflareaccess.com",
+    exp: Date.now() / 1000 + 60, email: "a@b.c" });
+  const viaCookie = new Request("https://site/llm/status", { headers: { cookie: `x=1; CF_Authorization=${t}` } });
+  assert.equal(await verifyAccess(viaCookie, env, certs), null);
+  const forged = new Request("https://site/llm/status", { headers: { cookie: `CF_Authorization=${t.slice(0, -4)}AAAA` } });
+  assert.match((await (await verifyAccess(forged, env, certs)).json()).error.message, /bad signature/);
+});
+
 test("ALLOWED_EMAILS takes whole domains as @domain", async () => {
   resetCertCache();
   const { sign, certs } = await signer();

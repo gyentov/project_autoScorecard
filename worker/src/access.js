@@ -28,11 +28,21 @@ async function keysFor(team, fetchFn) {
 
 export function resetCertCache() { certs = { at: 0, keys: [] }; }
 
+function cookie(request, name) {
+  for (const part of (request.headers.get("cookie") || "").split(";")) {
+    const i = part.indexOf("=");
+    if (i > 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim();
+  }
+  return null;
+}
+
 export async function verifyAccess(request, env, fetchFn = fetch) {
   if (env.REQUIRE_ACCESS === "false") return null;
   const team = env.ACCESS_TEAM_DOMAIN;
   if (!team || !env.ACCESS_AUD) return deny("ACCESS_TEAM_DOMAIN / ACCESS_AUD not configured");
-  const token = request.headers.get("cf-access-jwt-assertion");
+  // Access adds the header on most requests; the app's background calls (from its Python
+  // worker) can arrive with only the CF_Authorization cookie, which holds the same token
+  const token = request.headers.get("cf-access-jwt-assertion") || cookie(request, "CF_Authorization");
   if (!token) return deny("no Access token");
   const parts = token.split(".");
   if (parts.length !== 3) return deny("malformed token");
