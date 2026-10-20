@@ -19,7 +19,19 @@ def test_vintage_curves_window_and_target_from_history():
     a60 = c[(c.threshold == 60) & (c.cohort == "all")].set_index("mob")["bad_rate"]
     assert (a30 >= a60).all() and (a60 >= a90).all()          # ever 90+ implies ever 60+, 30+
     rec = V.recommend(c)
-    assert rec["threshold"] in V.THRESHOLDS and rec["window"] in V.WINDOWS
+    assert rec["threshold"] == V.NPL_THRESHOLD                # 90+ = NPL is the default
+    sc = V.share_curve(c, 90).set_index("mob")["share"]
+    # the window is the inflection point: before it the curve climbs fast, after it slowly
+    w = rec["window"]
+    assert 3 < w < rec["horizon"] and sc[w] >= V.MIN_SHARE
+    assert sc[w] - sc[w - 3] > sc[w + 3] - sc[w]
+    assert V.recommend(c, 30)["threshold"] == 30              # the Boss can pick 60+ or 30+
+    # early prediction: a looser threshold catches more future NPL earlier; all by the horizon
+    cap = V.early_capture(d["performance_monthly"], d["applications"], spec, "app_date", rec["horizon"])
+    at = cap[cap.mob == w].set_index("threshold")["capture"]
+    assert at[30] >= at[60] >= at[90] and (cap[cap.mob == rec["horizon"]].capture == 1).all()
+    assert (cap[cap.threshold == 90].precision.dropna() == 1).all()   # 90+ by X is NPL by the horizon
+
     # the 12-month 90+ flag from history equals the summary column the bank already had
     y12 = V.ever_bad(d["performance_monthly"], d["applications"], spec, "app_date", 90, 12)
     perf = d["performance"].set_index("app_id")["max_dpd_12m"]
@@ -44,3 +56,8 @@ def test_vintage_from_snapshot_dates():
     assert y["a"] == 0 and y["b"] == 0                        # 90+ came after the window
     assert V.ever_bad(hist, base, spec, "open_date", 30, 3)["a"] == 1
     assert np.isnan(V.ever_bad(hist, base, spec, "open_date", 90, 6)["b"])   # immature
+
+
+def test_knee_is_where_the_curve_bends():
+    assert V.knee([1, 2, 3, 4, 5, 6], [0, .5, .8, .9, .95, 1]) == 3
+    assert V.knee([1, 2, 3], [0, 0, 0]) == 3                  # flat: no bend, last point

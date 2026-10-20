@@ -220,10 +220,11 @@ class StagesMixin:
         return self.target_stage()
 
     # ================================================================= vintage analysis
-    def vintage(self) -> dict | None:
+    def vintage(self, threshold: int | None = None) -> dict | None:
         """Bening's vintage analysis from the monthly performance table, if there is one:
-        cumulative X+ DPD curves per cohort by months on book, the recommended window
-        and threshold, and the resulting bad flag per account (NaN = immature)."""
+        cumulative X+ DPD curves per cohort by months on book, the recommended window per
+        threshold (90+ = NPL by default, or the one the Boss chose), the early prediction
+        of NPL, and the bad flag per account for each threshold (NaN = immature)."""
         st = self.state
         spec = (st.join_plan or {}).get("history")
         if not spec:
@@ -236,11 +237,18 @@ class StagesMixin:
         dates = prof.loc[prof.role == "date", "column"].tolist()
         if not dates:
             return None
+        if threshold is None:                     # the Boss's choice, once there is one
+            col = str((st.target or {}).get("column", ""))
+            threshold = int(col[len("vin_ever"):].split("_")[0]) if col.startswith("vin_ever") else V.NPL_THRESHOLD
         curves = V.vintage(hist, base, spec, dates[0])
-        rec = V.recommend(curves)
+        rec = V.recommend(curves, threshold)
         curves.to_csv(self.project.dir("work") / "vintage_curves.csv", index=False)
-        y = V.ever_bad(hist, base, spec, dates[0], rec["threshold"], rec["window"])
-        return {"spec": spec, "date_col": dates[0], "curves": curves, "rec": rec, "y": y}
+        cap = V.early_capture(hist, base, spec, dates[0], rec["horizon"])
+        cap.to_csv(self.project.dir("work") / "vintage_early_capture.csv", index=False)
+        ys = {r["threshold"]: V.ever_bad(hist, base, spec, dates[0], r["threshold"], r["window"])
+              for r in rec["by_threshold"]}
+        return {"spec": spec, "date_col": dates[0], "curves": curves, "rec": rec, "capture": cap,
+                "ys": ys, "y": ys[rec["threshold"]]}
 
     def _add_dataset_column(self, name: str, values: pd.Series) -> None:
         df, _ = self.dataset()
@@ -249,39 +257,78 @@ class StagesMixin:
         _DATA[self.project.id] = {"df": df, "y": None}
 
     def _vintage_slides(self, vin: dict) -> tuple[list, list]:
-        """(slides, script) for the target meeting: the evidence before the proposal."""
-        rec, c, spec = vin["rec"], vin["curves"], vin["spec"]
+        """(slides, script) for the target meeting: what NPL is, then the vintage evidence
+        (the curves, the inflection point, the early prediction) before the proposal."""
+        rec, c, spec, cap = vin["rec"], vin["curves"], vin["spec"], vin["capture"]
         T, Wd = rec["threshold"], rec["window"]
-        pick = next(r for r in rec["by_threshold"] if r["threshold"] == T)
-        rows = [{"ambang": f"{r['threshold']}+ DPD", "MOB matang": r["mature_mob"],
-                 "window": f"{r['window']} bln", "bad rate": f"{r['bad_rate']:.1%}",
+        by = {r["threshold"]: r for r in rec["by_threshold"]}
+        pick = by[T]
+        at = cap[cap.mob == Wd].set_index("threshold")
+        kol = [{"kolektibilitas": "Kol 1 lancar", "tunggakan": "0 hari", "NPL?": ""},
+               {"kolektibilitas": "Kol 2 dalam perhatian khusus", "tunggakan": "1-90 hari", "NPL?": ""},
+               {"kolektibilitas": "Kol 3 kurang lancar", "tunggakan": "91-120 hari", "NPL?": "ya"},
+               {"kolektibilitas": "Kol 4 diragukan", "tunggakan": "121-180 hari", "NPL?": "ya"},
+               {"kolektibilitas": "Kol 5 macet", "tunggakan": "lebih dari 180 hari", "NPL?": "ya"}]
+        marks = [m for m in V.WINDOWS if m <= rec["horizon"]]
+        if Wd not in marks:
+            marks = sorted({*marks, Wd})
+        early = [{"MOB": f"{m}" + (" (window)" if m == Wd else ""),
+                  **{f"{t}+ menangkap": f"{float(r.capture):.0%}" for t, r in
+                     cap[cap.mob == m].set_index("threshold").iterrows()},
+                  f"akun {T}+": f"{float(cap[(cap.mob == m) & (cap.threshold == T)].flagged.iloc[0]):.1%}"}
+                 for m in marks]
+        rows = [{"ambang": f"{r['threshold']}+ DPD" + (" (NPL)" if r["threshold"] == V.NPL_THRESHOLD else ""),
+                 "titik infleksi": f"MOB {r['mature_mob']}", "window": f"MOB {r['window']}",
+                 "bad terlihat": f"{r['share_of_last']:.0%}", "bad rate": f"{r['bad_rate']:.1%}",
                  "bad": r["bads"], "akun matang": r["n_mature"]} for r in rec["by_threshold"]]
-        note = ("<p class='muted'>Window = bulan standar (6, 9, 12, 18, 24) saat kurva mencapai "
-                f"{V.MATURE:.0%} dari nilai akhirnya; kalau akun yang sudah selama itu kurang dari "
-                f"{V.MIN_MATURE_SHARE:.0%}, dipakai window terpanjang yang masih "
-                f"{V.MIN_MATURE_SHARE:.0%}. Ambang = yang paling ketat dengan minimal "
-                f"{V.MIN_BADS} bad dan bad rate {V.MIN_RATE:.0%}.</p>")
+        note = (f"<p class='muted'>Titik infleksi = MOB tempat kurva kumulatif paling jauh di atas garis "
+                f"lurus dari awal ke akhir (sumbu diskalakan 0-1): sesudahnya tiap bulan tambahan hanya "
+                f"menambah sedikit bad. Window minimal memuat {V.MIN_SHARE:.0%} bad kumulatif dan "
+                f"menyisakan {V.MIN_MATURE_SHARE:.0%} akun matang. 'Bad terlihat' = bagian dari bad "
+                f"sampai MOB {rec['horizon']} yang sudah terlihat di window.</p>")
         slides = [
+            ("Apa itu NPL?", f"<p>{V.NPL_NOTE}</p>" + html_table(kol)
+             + "<p><b>Tujuan vintage analysis:</b> prediksi dini NPL. Dengan melihat berapa nasabah yang "
+               "di MOB X sudah masuk Y+ DPD, kita menangkap sebagian besar calon NPL tanpa menunggu "
+               "kurvanya selesai.</p>", "html"),
             (f"Vintage {T}+ DPD per kohort", V.curves_svg(c, T, Wd, f"Pernah {T}+ DPD, "
                                                          "per kuartal booking"), "html"),
-            ("Kurva 30+ / 60+ / 90+", V.curves_svg(c, None, Wd, "Semua kohort"), "html"),
+            ("Titik infleksi", V.inflection_svg(c, Wd, f"Bagian bad kumulatif yang sudah terlihat, "
+                                                    f"s.d. MOB {rec['horizon']}"), "html"),
+            ("Prediksi dini NPL", V.capture_svg(cap, Wd, f"Calon NPL ({V.NPL_THRESHOLD}+ s.d. MOB "
+                                                    f"{rec['horizon']}) yang sudah Y+ DPD di MOB X")
+             + html_table(early), "html"),
             ("Rekomendasi definisi", html_table(rows) + note, "html"),
         ]
+        c30 = at.loc[30] if 30 in at.index else None
         script = [
-            say("bening", "thinking", f"Sebelum menentukan target, saya lakukan vintage analysis "
-                f"dari tabel {spec['table']}: berapa persen akun yang pernah {T}+ DPD, per "
-                "kohort booking, menurut bulan sejak booking.", 0),
-            say("bening", "neutral", f"Kurva {T}+ baru mendatar sekitar bulan ke-"
-                f"{pick['mature_mob']}; di bulan {Wd} sudah {pick['share_of_last']:.0%} dari bad "
-                f"yang terlihat di akhir. Jadi window kinerja yang saya usulkan {Wd} bulan."
-                + (" Kurvanya masih naik sedikit, tapi window lebih panjang membuang terlalu "
-                   "banyak akun yang belum matang, jadi ini kompromi." if pick["traded_off"]
-                   else ""), 1),
+            say("bening", "thinking", "Sebelum menentukan target, kita sepakati dulu apa itu NPL. "
+                + V.NPL_NOTE + " Jadi pilihan default saya 90+ DPD.", 0),
+            say("citra", "neutral", "Setuju, 90+ sejalan dengan definisi NPL regulator. 30+ dan 60+ tetap "
+                "saya pakai sebagai sinyal dini, bukan definisi bad.", 0),
+            say("laras", "neutral", "Tujuan vintage di sini prediksi dini: dari berapa nasabah yang di MOB X "
+                "sudah Y+ DPD, kita bisa memperkirakan sebagian besar NPL lebih awal.", 0),
+            say("bening", "neutral", f"Ini kurva pernah {T}+ DPD per kuartal booking dari tabel "
+                f"{spec['table']}: naik tajam di awal, lalu melandai.", 1),
+            say("bening", "thinking", f"Titik infleksi kurva {T}+ ada di MOB {pick['mature_mob']}: sesudahnya "
+                f"tambahan bad per bulan kecil. Di MOB {Wd} sudah {pick['share_of_last']:.0%} dari bad "
+                f"kumulatif sampai MOB {rec['horizon']} yang terlihat, jadi window kinerja yang saya usulkan "
+                f"{Wd} bulan."
+                + (" Titik infleksinya masih memuat kurang dari separuh bad, jadi saya geser sampai separuh "
+                   "terlihat." if Wd > pick["mature_mob"] and not pick["traded_off"] else "")
+                + (" Kurvanya masih naik, tapi window lebih panjang membuang terlalu banyak akun yang belum "
+                   "matang, jadi ini kompromi." if pick["traded_off"] else ""), 2),
+            say("citra", "neutral", f"Dari {int(cap.npl.iloc[0]):,} calon NPL di akun yang sudah diamati "
+                f"{rec['horizon']} bulan: di MOB {Wd}, {float(at.loc[T].capture):.0%} sudah {T}+ DPD"
+                + (f", dan {float(c30.capture):.0%} sudah 30+ DPD (dari yang 30+, {float(c30.precision):.0%} "
+                   "benar-benar jadi NPL)." if c30 is not None and T != 30 and pd.notna(c30.precision) else "."), 3),
             say("bening", "serious" if rec["enough"] else "worried",
-                f"Dengan ambang {T}+ ada {rec['bads']:,} bad ({rec['bad_rate']:.1%}) dari "
-                f"{rec['n_mature']:,} akun yang sudah {Wd} bulan"
+                f"Dengan {T}+ ada {rec['bads']:,} bad ({rec['bad_rate']:.1%}) dari {rec['n_mature']:,} akun "
+                f"yang sudah {Wd} bulan"
                 + (", cukup untuk scorecard." if rec["enough"] else
-                   ", masih di bawah 300 bad; hati-hati, modelnya bisa kurang stabil."), 2),
+                   ", masih di bawah 300 bad atau 2%; modelnya bisa kurang stabil"
+                   + (f". Kalau Boss mau, {rec['suggest']}+ memberi bad yang cukup." if rec["suggest"] else ".")),
+                4),
         ]
         return slides, script
 
@@ -299,11 +346,14 @@ class StagesMixin:
         if vin:                                   # the vintage evidence decides the target
             rec = vin["rec"]
             col = V.column_name(rec["threshold"], rec["window"])
-            self._add_dataset_column(col, df[vin["spec"]["key"]].map(vin["y"]))
+            for r in rec["by_threshold"]:         # every threshold, so the Boss can switch
+                self._add_dataset_column(V.column_name(r["threshold"], r["window"]),
+                                         df[vin["spec"]["key"]].map(vin["ys"][r["threshold"]]))
             df, _ = self.dataset()
             tg = {**tg, "column": col, "rule": "eq", "value": 1, "source_prefix": None,
                   "vintage": json_safe({k: rec[k] for k in ("threshold", "window", "bad_rate", "bads",
-                                                            "n_mature", "by_threshold", "enough")}),
+                                                            "n_mature", "by_threshold", "enough",
+                                                            "share_of_last", "horizon", "suggest")}),
                   "candidates": [{"column": col, "kind": "binary", "score": 9, "values": [0, 1],
                                   "suggestion": f"bad = pernah {rec['threshold']}+ DPD dalam "
                                                 f"{rec['window']} bulan (vintage)"}]
@@ -341,7 +391,15 @@ class StagesMixin:
         script.append(say("bening", "serious", f"{len(feats)} kolom jadi kandidat fitur; "
                           f"{len(out)} tidak dipakai (id, tanggal, data hasil).", o + 2))
         choices = [choice("acc", "ACC target & split", "target_acc")]
-        alts = [c for c in tg["candidates"][1:] if c["score"] > 0][:2]   # outcome-like only
+        if v:                                     # the other DPD thresholds, each at its own window
+            for r in tg["vintage"]["by_threshold"]:
+                if r["threshold"] != v["threshold"]:
+                    choices.append(choice(f"vin{r['threshold']}", f"Pakai {r['threshold']}+ DPD "
+                                          f"(window MOB {r['window']})", "target_alt",
+                                          column=V.column_name(r["threshold"], r["window"]), rule="eq",
+                                          value=1))
+        alts = [c for c in tg["candidates"][1:] if c["score"] > 0
+                and not str(c["column"]).startswith("vin_")][:1 if v else 2]   # outcome-like only
         for k, c in enumerate(alts, 1):
             alt_rule, alt_val = ("eq", c["values"][-1]) if c["kind"] == "binary" else ("ge", 90)
             if c["kind"].startswith(("binary", "numeric")):
@@ -372,6 +430,12 @@ class StagesMixin:
     def _do_target_alt(self, m, column: str, rule: str, value: Any) -> dict:
         st = self.state
         st.target.update(column=column, rule=rule, value=value)
+        vin = st.target.get("vintage")
+        if vin and column.startswith("vin_ever"):  # another DPD threshold: the deck and report follow
+            r = next(x for x in vin["by_threshold"] if V.column_name(x["threshold"], x["window"]) == column)
+            vin.update({k: r[k] for k in ("threshold", "window", "bad_rate", "bads", "n_mature",
+                                          "share_of_last")},
+                       enough=r["bads"] >= V.MIN_BADS and r["bad_rate"] >= V.MIN_RATE)
         st.save(self.project)
         _DATA.get(self.project.id, {}).update(y=None)
         return self._do_target_acc(m, alt=True)

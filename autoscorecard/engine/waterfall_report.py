@@ -325,8 +325,17 @@ def waterfall_svg(summary: pd.DataFrame) -> str:
         if k:
             parts.append(f'<line class="rule" x1="{pad}" x2="{W - pad}" y1="{y + 0.5}" '
                          f'y2="{y + 0.5}"/>')
-    parts.append("</svg>")
-    return "\n".join(parts)
+    # axis titles: the steps down the left (rotated), the bar length below
+    body = "\n".join(parts[3:])
+    return "\n".join([
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W + 20} {H + 20}" width="{W + 20}" '
+        f'height="{H + 20}" role="img" aria-label="Features remaining after each waterfall step">',
+        _STYLE, f'<rect class="bg" width="{W + 20}" height="{H + 20}"/>',
+        f'<g transform="translate(20,0)">{body}</g>',
+        f'<text class="mut" transform="translate(13,{H / 2:.0f}) rotate(-90)" font-size="11" '
+        f'text-anchor="middle">waterfall step</text>',
+        f'<text class="mut" x="{20 + W / 2:.0f}" y="{H + 12}" font-size="11" text-anchor="middle">'
+        f'number of features remaining (bar length)</text>', "</svg>"])
 
 
 def report_markdown(res: WaterfallResult, performance: dict | None = None,

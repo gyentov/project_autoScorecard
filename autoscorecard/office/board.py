@@ -190,8 +190,16 @@ def bars_svg(t: pd.DataFrame, label_cols: list[str], value_col: str, pct: bool) 
                      f'<rect x="{lw}" y="{y + 3}" width="{bw:.1f}" height="14" rx="3" fill="#2a78d6"/>'
                      f'<text x="{lw + bw + 6:.1f}" y="{y + 14}" font-size="12" '
                      f'fill="var(--t1,#0b0b0b)">{txt}</text>')
-    return (f'<svg viewBox="0 0 {w} {len(rows) * h + 8}" width="100%" role="img" '
-            f'aria-label="{html.escape(value_col)}" style="max-width:{w}px">{"".join(lines)}</svg>')
+    # axis titles: the groups along the left (rotated), the measure below
+    ht = len(rows) * h + 8
+    ylab = html.escape(", ".join(label_cols) or "kelompok")
+    return (f'<svg viewBox="0 0 {w + 20} {ht + 20}" width="100%" role="img" '
+            f'aria-label="{html.escape(value_col)}" style="max-width:{w + 20}px">'
+            f'<g transform="translate(20,0)">{"".join(lines)}</g>'
+            f'<text transform="translate(12,{ht / 2:.0f}) rotate(-90)" font-size="11" text-anchor="middle" '
+            f'fill="var(--t2,#52514e)">{ylab}</text>'
+            f'<text x="{20 + (lw + w) / 2:.0f}" y="{ht + 15}" font-size="11" text-anchor="middle" '
+            f'fill="var(--t2,#52514e)">{html.escape(value_col)}</text></svg>')
 
 
 def records(t: pd.DataFrame) -> list[dict]:

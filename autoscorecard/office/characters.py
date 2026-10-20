@@ -117,6 +117,19 @@ WORKING: dict[str, list[str]] = {
     "citra": ["Sebentar, Boss. Saya hitung dulu.", "Baik. Saya cek angkanya sekarang."],
     "kirana": ["Siap, Boss! Sebentar saya siapkan.", "Oke Boss, saya rapikan dulu ya!"],
 }
+# the first words when the Boss is just talking, not asking for work
+CHATTING: dict[str, list[str]] = {
+    "laras": ["Hmm, iya Boss?", "Oh, iya Boss, sebentar ya."],
+    "bening": ["Eh, iya Boss?", "Hehe, iya Boss, sebentar ya."],
+    "citra": ["Hmm. Iya, Boss?", "Ya, Boss?"],
+    "kirana": ["Iya Boss? Bentar ya!", "Ooh, iya Boss!"],
+}
+# a message that asks for work (counting, showing, changing), not just a chat
+WORK_REQUEST = (r"\b(hitung|tampilkan|tunjukkan|lihat|cek|periksa|analisis|analisa|buat|bikin|jalankan|"
+                r"ubah|ganti|bandingkan|tambah|hapus|buang|kembalikan|paksa|force|exclude|include|show|"
+                r"siapkan|kirim|rapikan|update|perbaiki|sampel|sample|vintage|eda|rata-rata|median|"
+                r"bad rate|jumlah|distribusi|korelasi|binning|bin|plot|grafik|tabel|deck|laporan|"
+                r"build|cut|model)\b")
 
 LINES: dict[str, list[str]] = {
     "greet": ["Pagi, Boss!", "Halo Boss, siap mulai?", "Selamat datang lagi, Boss."],

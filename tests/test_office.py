@@ -61,12 +61,17 @@ def test_full_project_flow(office):
     assert m.kind == "kickoff" and [c["id"] for c in m.choices] == ["acc", "adjourn"]
     o.choose(m.id, "acc")
     m = open_meeting(o)                       # Bening joined on her own: straight to target
-    assert m.kind == "target" and "vintage analysis" in m.script[0]["text"]
+    assert m.kind == "target" and "NPL" in m.script[0]["text"]       # first: what NPL is
+    assert any("prediksi dini" in x["text"] for x in m.script)
     t = o.state.target                           # the vintage evidence picked the definition
-    assert t["column"].startswith("vin_ever") and t["vintage"]["window"] in (6, 9, 12, 18, 24)
-    assert [sl["title"] for sl in m.slides][:3] == [f"Vintage {t['vintage']['threshold']}+ DPD "
-                                                    "per kohort", "Kurva 30+ / 60+ / 90+",
+    v = t["vintage"]
+    assert t["column"] == f"vin_ever90_mob{v['window']}" and v["threshold"] == 90   # NPL by default
+    assert [sl["title"] for sl in m.slides][:5] == ["Apa itu NPL?", "Vintage 90+ DPD per kohort",
+                                                    "Titik infleksi", "Prediksi dini NPL",
                                                     "Rekomendasi definisi"]
+    plots = [(o.project.root / sl["file"]).read_text() for sl in m.slides[1:4]]
+    assert all("rotate(-90)" in p and "MOB" in p for p in plots)        # every plot: both axis titles
+    assert {c["id"] for c in m.choices} >= {"acc", "vin60", "vin30"}      # 60+ / 30+ as the alternatives
     assert any("perf_max_dpd_12m" in c["label"] for c in m.choices)      # the 12-month summary
     from autoscorecard.office import prep as _prep
     df, y = o.dataset()
@@ -1001,3 +1006,12 @@ def test_eda_in_the_office_flow(office):
     d = documentation(o)
     assert "Analisis data eksploratif (EDA)" in d["sections"]
     assert "Notulen diskusi Bening" in (o.project.root / d["file"]).read_text()
+
+
+def test_first_words_follow_the_message():
+    from autoscorecard.office.agent import AgentRuntime
+    from autoscorecard.office.characters import CHATTING, WORKING
+    for text in ("apa kabar hari ini?", "kamu suka kopi?", "halo Bening"):
+        assert AgentRuntime.working_line("bening", text) in CHATTING["bening"]
+    for text in ("tolong hitung bad rate per channel", "tampilkan vintage 90+"):
+        assert AgentRuntime.working_line("citra", text) in WORKING["citra"]

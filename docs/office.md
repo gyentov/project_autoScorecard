@@ -27,7 +27,7 @@ apologetic, excited, serious, surprised.
 | Data first | Laras | before anything starts she confirms the data: files already in the project (e.g. the demo data) must be confirmed in 📁 Data; with no files she asks for an upload. "Mulai kickoff" opens that window when needed and starts kickoff right after the handover | confirm / upload |
 | Kickoff & timeline | Laras | team introduction, timeline (Gantt slide), working rules | ACC timeline |
 | Data & join | Bening | no meeting: at her desk she profiles every table you handed over, picks the base table, tries the candidate keys for each table and keeps the best by rule (one-to-many tables are aggregated); the "Catatan join data" memo lists what she used and what else she tried, and the Cut 1 meeting reports what each table brought to the model | none; say so if you want another join |
-| Target definition | Bening | **vintage analysis first** when there is a monthly performance table (see below): cumulative 30+/60+/90+ DPD curves per booking quarter by months on book, the window where the curve flattens and the strictest threshold with enough bads; she proposes "ever T+ DPD within W months" from that history (immature accounts excluded) and offers the summary column as an alternative. Without history: proposes `bad` from summary columns (outcome-table columns first), bad rate overall and per quarter, out-of-time split (≈ latest 15%), candidate features with reasons for every excluded column | ACC, or pick an offered alternative |
+| Target definition | Bening | **vintage analysis first** when there is a monthly performance table (see below): cumulative 30+/60+/90+ DPD curves per booking quarter by months on book, what NPL is (90+ DPD, the default threshold), the window at the inflection point of the cumulative curve and the early prediction of NPL (share of future NPL already Y+ DPD at MOB X); she proposes "ever T+ DPD within W months" from that history (immature accounts excluded) and offers the summary column as an alternative. Without history: proposes `bad` from summary columns (outcome-table columns first), bad rate overall and per quarter, out-of-time split (≈ latest 15%), candidate features with reasons for every excluded column | ACC, switch to 60+ / 30+, or pick an offered alternative |
 | Data dictionary | Bening | memo listing missing descriptions / guessed types; does not block modelling | upload a dictionary any time |
 | EDA & discussion | Bening → Citra → Laras | no meeting: Bening's EDA report and points, Citra's review, their discussion of the points she disagrees with, Laras's check of the minutes (see below) | ACC / reject the proposals it produced (in the plan meeting); answer escalated points |
 | Waterfall plan | Citra | the plan diagram and criteria; "✏ Edit rencana waterfall sendiri" opens the editor | edit it yourself, then ACC plan → Cut 1 is built |
@@ -311,12 +311,21 @@ per account key of the base table, a months-on-book column (`mob`, `month_on_boo
   counted as good (a life table), so young cohorts do not drag the curve down; and
   ever 30+ ≥ ever 60+ ≥ ever 90+ is kept. Charts drop each line's thin tail (fewer than
   half its accounts observed).
-- **Window:** the first standard MOB (6, 9, 12, 18, 24) where the overall curve reaches
-  85% of its last well-observed value; if fewer than 60% of accounts are that old, the
-  longest window that keeps 60% (Bening says it is a compromise).
-- **Threshold:** the strictest of 90+, 60+, 30+ with at least 300 bads and a 2% bad rate
-  at that window.
-- **Target:** `vin_ever{T}_mob{W}` is added to the dataset: 1 = reached T+ within W
+- **Purpose:** an early prediction of NPL. The meeting opens with what NPL is
+  (collectibility 3-5, OJK: more than 90 days past due), then shows how many accounts
+  are Y+ DPD by MOB X, i.e. how much of the future NPL is visible early.
+- **Threshold:** 90+ (NPL) by default. 60+ and 30+ are offered as choices, each with its
+  own window; Bening warns (and names the strictest threshold that would do) when the
+  chosen one has fewer than 300 bads or under a 2% bad rate.
+- **Window:** the inflection point of the overall cumulative curve (Kneedle: with both
+  axes scaled 0-1, the MOB farthest above the line from first to last point), moved
+  later if it holds less than half of the cumulative bads; if fewer than 60% of accounts
+  are that old, the longest MOB that keeps 60% (Bening says it is a compromise).
+- **Early prediction:** among accounts observed to the horizon (the last MOB 30% of
+  accounts reached), the share of the eventual NPL accounts already 30+/60+/90+ by each
+  MOB, and how many of those flagged became NPL (`work/vintage_early_capture.csv`).
+- **Charts:** every plot has both axis titles (x and y).
+- **Target:** `vin_ever{T}_mob{W}` is added to the dataset for each threshold: 1 = reached T+ within W
   months, 0 = observed W months and never did, empty = immature (not modelled). It and
   every outcome-table column are always excluded from the candidate features. The OOT
   split is taken among accounts with a known outcome.

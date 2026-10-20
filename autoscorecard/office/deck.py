@@ -364,27 +364,26 @@ def build(office, cut: str | None = None) -> dict:
                 s_ = c[(c.threshold == th) & (c.cohort == "all") & (c.mob <= vin["window"])]
                 at.append((f"{th}+ DPD", float(s_.bad_rate.iloc[-1]) if len(s_) else 0.0))
         chosen = [k for k, (lab, _) in enumerate(at) if lab.startswith(str(vin["threshold"]))]
-        stricter = [r for r in byt if r["threshold"] > vin["threshold"]]
-        why_t = (f"It is the strictest threshold that clears both minimums (at least 300 bads and a 2% bad "
-                 "rate): severe enough to mean real default, frequent enough to model.")
-        if stricter:
-            why_t += " " + "; ".join(f"{r['threshold']}+ gives only {r['bads']:,} bads"
-                                     + (f" at {r['bad_rate']:.1%}" if r["bad_rate"] < 0.02 else "")
-                                     for r in stricter
-                                     if r["bads"] < 300 or r["bad_rate"] < 0.02) + "."
+        if vin["threshold"] == 90:
+            why_t = ("It is the NPL definition: in Indonesia a loan is non-performing at collectibility 3-5 "
+                     "(OJK), i.e. more than 90 days past due, so the model predicts the losses the bank reports.")
+        else:
+            why_t = (f"NPL is 90+ days past due (collectibility 3-5, OJK); {vin['threshold']}+ was chosen as an "
+                     "earlier, broader signal of it.")
         if byt and not vin.get("enough", True):
-            why_t = ("No threshold reaches 300 bads; we use the one with the most bads and flag the sample "
-                     "size as a limitation.")
+            why_t += (" It gives fewer than 300 bads or under a 2% bad rate, so the sample size is flagged as a "
+                      "limitation.")
         al = c[(c.threshold == vin["threshold"]) & (c.cohort == "all")]
         al = al[al.n >= 0.5 * al.n.iloc[0]]
         capture = float(al[al.mob <= vin["window"]].bad_rate.iloc[-1]) / max(float(al.bad_rate.iloc[-1]), 1e-9)
         d.add("Bad definition", f"Bad is defined as ever {vin['threshold']}+ days past due within "
               f"{vin['window']} months on book: {vin['bads']:,} bads, a {vin['bad_rate']:.1%} bad rate",
-              two(V.vbars(at, colors=[V.ACCENT if k in chosen else V.GREY for k in range(len(at))], h=300, sub=sub),
+              two(V.vbars(at, colors=[V.ACCENT if k in chosen else V.GREY for k in range(len(at))], h=300, sub=sub,
+                     xlabel="days-past-due threshold", ylabel="bad rate"),
                   f"<p><b>Why {vin['threshold']}+.</b> {esc(why_t)}</p>"
-                  + f"<p><b>Why {vin['window']} months.</b> By then the vintage curves have reached {capture:.0%} of "
-                  "their observed level (next slide); a shorter window would miss late defaults, a longer one "
-                  "would leave too few mature accounts.</p>"
+                  + f"<p><b>Why {vin['window']} months.</b> It is the inflection point of the cumulative curve: "
+                  f"by then {capture:.0%} of the defaults observed so far have appeared (next slide), and each "
+                  "further month adds few. A longer window would leave too few mature accounts.</p>"
                   + f"<p><b>Immature accounts.</b> Applications observed for less than {vin['window']} months "
                   "are excluded, good or bad, so recent cohorts are not biased toward bads.</p>",
                   "Bad rate by threshold, each at its own maturity window"
@@ -406,7 +405,8 @@ def build(office, cut: str | None = None) -> dict:
         d.add("Vintage analysis", f"Default curves flatten by month {vin['window']}: {a_n(vin['window'])} "
               f"{vin['window']}-month window captures {at_w / last:.0%} of the defaults seen by month "
               f"{int(s.mob.iloc[-1])}",
-              two(V.lines(ser, int(c.mob.max()), xlabel="months on book", marker=(vin["window"], f"window: {vin['window']} months")),
+              two(V.lines(ser, int(c.mob.max()), marker=(vin["window"], f"window: {vin['window']} months"),
+                      xlabel="months on book (MOB)", ylabel=f"cumulative share ever {vin['threshold']}+ DPD"),
                   f"<p><b>Reading the chart.</b> Each grey line is a booking quarter; the green line pools all "
                   f"of them. The curve climbs steeply in the first year, then slows.</p>"
                   + (f"<p><b>Cohorts behave alike.</b> At month 12 the quarters range from {min(spread):.0%} "
@@ -455,7 +455,7 @@ def build(office, cut: str | None = None) -> dict:
         why = wf[(wf.n_dropped > 0) | (wf.n_added > 0)]
         d.add("Model waterfall", f"{n_in} candidate variables narrowed to {len(feats)}; "
               f"{big.step.lower()} removed the most ({int(big.n_dropped)})",
-              two(V.funnel(fsteps),
+              two(V.funnel(fsteps, xlabel="variables remaining", ylabel="waterfall step"),
                   table_html([{"step": r.step, "rule": r.criterion,
                                  "removed": ("−" + str(r.n_dropped)) if r.n_dropped else "",
                                  "added": ("+" + str(r.n_added)) if r.n_added else ""} for r in why.itertuples()],
@@ -480,7 +480,8 @@ def build(office, cut: str | None = None) -> dict:
               + f"{shift} (PSI {psi:.2f})",
               two(V.vbars(items, fmt=lambda v: f"{v:.2f}",
                           colors=[V.ACCENT if lab == "OOT" else V.GREY for lab, _ in items], h=300,
-                          sub=[f"KS {perf[k.lower()]['ks']:.2f}" for k, _ in items]),
+                          sub=[f"KS {perf[k.lower()]['ks']:.2f}" for k, _ in items],
+                          xlabel="sample", ylabel="Gini"),
                   f"<p><b>Discrimination.</b> Gini {train.get('gini', 0):.2f} in development falls to "
                   f"{oot.get('gini', 0):.2f} on the most recent applications, a {drop:.2f} drop: "
                   + ("within the usual range for application scorecards." if drop < 0.1 else "worth monitoring.")
@@ -519,7 +520,8 @@ def build(office, cut: str | None = None) -> dict:
                + ("kept the planned settings" if not changed else "changed " + " and ".join(changed))
                + f": validation Gini {ch['gini_val']:.3f} with {ch['n_features']} variables"),
               two(V.hbars(items[:12], fmt=lambda v: f"{v:.3f}", focus=focus, label_w=300,
-                          note={dflt: "planned"} if dflt is not None and dflt not in focus else None),
+                          note={dflt: "planned"} if dflt is not None and dflt not in focus else None,
+                          xlabel="validation Gini", ylabel="tuning setting"),
                   f"<p><b>How.</b> The training sample was split again: {tu['n_fit']:,} accounts to fit, "
                   f"{tu['n_val']:,} to validate. Each setting re-ran the approved waterfall; test and "
                   "out-of-time samples were never used to choose, so their results stay an honest "
@@ -540,7 +542,7 @@ def build(office, cut: str | None = None) -> dict:
         items = [(names.get(r.variabel, r.variabel), r.kontribusi) for r in contrib.itertuples()]
         d.add("Score drivers", f"{', '.join(names.get(v, v) for v in top3['variabel'][:2])} drive "
               f"{top3['kontribusi'][:2].sum():.0%} of the score range",
-              two(V.hbars(items, focus={0, 1}),
+              two(V.hbars(items, focus={0, 1}, xlabel="share of the score range", ylabel="variable"),
                   "<p><b>How to read it.</b> Each bar is the gap in points between a variable's best and "
                   "worst bin, as a share of the total: the bigger the bar, the more that variable can move "
                   "an applicant's score.</p>"
@@ -569,7 +571,8 @@ def build(office, cut: str | None = None) -> dict:
               f"model's {ksm:.2f}",
               two(V.vbars(items, fmt=lambda v: f"{v:.2f}", h=290,
                           colors=[V.ACCENT if i in chosen else V.GREY for i in range(len(items))],
-                          sub=["✓" if i in chosen else "" for i in range(len(items))]),
+                          sub=["✓" if i in chosen else "" for i in range(len(items))],
+                          xlabel="number of score bands", ylabel="KS of the banded score (train)"),
                   "<p><b>How.</b> Start from twenty equal-population bands"
                   + (f" ({int(bp.bands.max())} once bands under 5% of accounts are merged)"
                      if int(bp.bands.max()) < 20 else "") + "; at each step merge the two "
@@ -595,8 +598,8 @@ def build(office, cut: str | None = None) -> dict:
         d.add("KS by score band",
               f"The score separates bads from goods by up to {top.ks:.0%} (KS), reached at band "
               f"{int(top.band)} of {len(tr)}" + (f"; {ks_by['oot']:.2f} out of time" if "oot" in ks_by else ""),
-              two(V.lines(series, xmax=len(tr), ymax=1.0, xlabel="score band (1 = riskiest)",
-                          marker=(float(top.band), f"KS {top.ks:.2f}"), h=300),
+              two(V.lines(series, xmax=len(tr), ymax=1.0, marker=(float(top.band), f"KS {top.ks:.2f}"), h=300,
+                          xlabel="score band (1 = riskiest)", ylabel="cumulative share of accounts"),
                   table_html(rows, ["band", "accounts", "bad rate", "cum. bads", "cum. goods", "KS"],
                              num={"accounts", "bad rate", "cum. bads", "cum. goods", "KS"})
                   + "<div class='sowhat'><b>So what:</b> declining the riskiest bands up to band "
@@ -615,7 +618,8 @@ def build(office, cut: str | None = None) -> dict:
         b0, bn = bands.iloc[0], bands.iloc[-1]
         d.add("Recommended score binning", f"Bad rate falls from {b0.bad_rate_train:.0%} in the lowest "
               f"score band to {bn.bad_rate_train:.1%} in the highest across {len(bands)} bands",
-              two(V.vbars(items, flag=rev, h=310, sub=sub),
+              two(V.vbars(items, flag=rev, h=310, sub=sub, xlabel="score band (lowest score first)",
+                          ylabel="bad rate"),
                   f"<p><b>Construction.</b> The {len(bands)} bands chosen on the previous slides, from "
                   "twenty equal-population bands; every band holds at least 5% of accounts and differs "
                   "significantly from its neighbours.</p>"
@@ -635,7 +639,8 @@ def build(office, cut: str | None = None) -> dict:
         lv = levels.set_index("level").loc[lvl]
         chart = (V.vbars([(f"{l}", lv.loc[l, "bad_rate_train"]) for l in lvl],
                          colors=[V.LEVEL_COLORS[l] for l in lvl], h=230,
-                         sub=[f"{lv.loc[l, 'score_min']:.0f}–{lv.loc[l, 'score_max']:.0f}" for l in lvl])
+                         sub=[f"{lv.loc[l, 'score_min']:.0f}–{lv.loc[l, 'score_max']:.0f}" for l in lvl],
+                         xlabel="risk level (score range below)", ylabel="bad rate")
                  + "<h4 style='margin-top:14px'>Share of applicants</h4>"
                  + V.stacked_share([(l, lv.loc[l, "pct"], V.LEVEL_COLORS[l]) for l in lvl]))
         rows = [{"level": f"<span class='pill' style='background:{V.LEVEL_COLORS[l]}'>{l}</span> {LEVEL_NAME[l]}",
@@ -670,7 +675,7 @@ def build(office, cut: str | None = None) -> dict:
               f"({worst['label']}, {worst['bad_rate']:.0%} bad) to {best['points']} points "
               f"({best['label']}, {best['bad_rate']:.1%} bad)",
               two(V.vbars(items, colors=[V.ALERT if k in low else V.GREY for k in range(len(items))], h=210,
-                          sub=[f"{r['points']} pts" for r in g])
+                          sub=[f"{r['points']} pts" for r in g], xlabel="bin (points below)", ylabel="bad rate")
                   + table_html(rows, ["bin", "accounts", "bad rate", "risk index", "points", "read"],
                                num={"accounts", "bad rate", "risk index", "points"}),
                   f"<p><b>What it is.</b> {esc(english or names.get(var, var))}"

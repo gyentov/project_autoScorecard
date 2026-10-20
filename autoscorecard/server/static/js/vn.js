@@ -350,11 +350,13 @@ export function setupVN() {
       adv?.();
     }
   });
+  sendOnlyWithText("vn-form", "vn-input");
   $("vn-form").addEventListener("submit", (e) => {
     e.preventDefault();
     const t = $("vn-input").value.trim();
     if (!t || VN.busy) return;
     $("vn-input").value = "";
+    $("vn-input").dispatchEvent(new Event("input"));
     sendText(t);
   });
   $("vn-close").onclick = closeVN;
@@ -374,6 +376,14 @@ export async function dialogLines(lines) {        // briefing: several lines, cl
     await typeInto($("dialog-text"), ln.text);
     await new Promise((res) => { DLG.advance = res; });
   }
+}
+
+// the send button is usable only when there is something to send
+function sendOnlyWithText(formId, inputId) {
+  const btn = $(formId).querySelector("button:not([type=button])");
+  const sync = () => { btn.disabled = !$(inputId).value.trim(); };
+  $(inputId).addEventListener("input", sync);
+  sync();
 }
 
 export async function openChat(who, greeting) {
@@ -437,11 +447,13 @@ export function setupDialog() {
     DLG.advance = null;
     adv?.();
   });
+  sendOnlyWithText("dialog-form", "dialog-input");
   $("dialog-form").addEventListener("submit", (e) => {
     e.preventDefault();
     const t = $("dialog-input").value.trim();
     if (!t) return;
     $("dialog-input").value = "";
+    $("dialog-input").dispatchEvent(new Event("input"));
     chatSend(t);
   });
   $("dialog-close").onclick = closeDialog;

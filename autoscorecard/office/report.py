@@ -15,6 +15,7 @@ from __future__ import annotations
 import html
 from datetime import datetime
 
+from ..engine.vintage import NPL_NOTE
 from . import deck as K
 from . import deckviz as V
 from . import edadoc as ED, edareview as ER
@@ -215,12 +216,15 @@ def build(office, cut: str | None = None) -> str:
         ser.append({"name": "Semua kohort", "x": al.mob.tolist(), "y": al.bad_rate.tolist(), "focus": True})
         byt = sorted(vin.get("by_threshold") or [], key=lambda x: x["threshold"])
         r.chapter("Definisi bad dan vintage analysis", "Kapan seorang debitur dianggap gagal bayar, dan mengapa.",
+                  f"<p>{NPL_NOTE} Vintage analysis dipakai sebagai prediksi dini NPL: dari berapa nasabah yang di "
+                  "MOB X sudah Y+ DPD, sebagian besar calon NPL sudah terlihat lebih awal.</p>"
                   f"<p>Bad didefinisikan sebagai <b>pernah {vin['threshold']}+ hari tunggakan dalam {vin['window']} "
                   f"bulan sejak booking</b>. Akun yang belum diamati selama {vin['window']} bulan penuh dikeluarkan "
                   f"(belum matang). Hasilnya {vin['bads']:,} bad dari {vin.get('n_mature', 0):,} akun matang, "
                   f"bad rate {vin['bad_rate']:.1%}.</p>"
-                  + r.figure(V.lines(ser, int(c.mob.max()), xlabel="bulan sejak booking",
-                                     marker=(vin["window"], f"window {vin['window']} bln")),
+                  + r.figure(V.lines(ser, int(c.mob.max()), marker=(vin["window"], f"window {vin['window']} bln"),
+                                     xlabel="bulan sejak booking (MOB)",
+                                     ylabel=f"% akun pernah {vin['threshold']}+ DPD (kumulatif)"),
                              f"Kurva vintage: persentase akun yang pernah {vin['threshold']}+ DPD per kohort booking",
                              "vintage_curves.csv")
                   + (r.table(_tbl([{"ambang": f"{x['threshold']}+ DPD", "window": f"{x['window']} bln",
@@ -228,8 +232,11 @@ def build(office, cut: str | None = None) -> str:
                                   ["ambang", "window", "bad", "bad rate"], {"bad", "bad rate"},
                                   hl=lambda x: x["ambang"].startswith(str(vin["threshold"]))),
                              "Alternatif ambang yang dipertimbangkan (terpilih ditandai)") if byt else "")
-                  + _so(f"window {vin['window']} bulan dipilih karena kurva berhenti naik secara material; definisi "
-                        "ini cukup ketat untuk berarti gagal bayar sungguhan dan cukup sering untuk dimodelkan."))
+                  + _so(f"window {vin['window']} bulan adalah titik infleksi kurva kumulatif: saat itu "
+                        f"{vin.get('share_of_last', 0):.0%} bad yang teramati sudah muncul dan tiap bulan tambahan "
+                        "hanya menambah sedikit; ambang "
+                        + ("90+ sama dengan definisi NPL." if vin["threshold"] == 90 else
+                           f"{vin['threshold']}+ dipilih Boss sebagai sinyal NPL yang lebih dini.")))
 
     # ---- 4. dictionary (approved only)
     vm = office.approved_meanings()
@@ -295,7 +302,7 @@ def build(office, cut: str | None = None) -> str:
                   f"<p>Seleksi variabel mengikuti waterfall yang disetujui Boss sebelum model dibangun. Dari "
                   f"{int(wf.n_in.iloc[0])} kandidat, {len(feats)} variabel bertahan. Setiap variabel dibin secara "
                   "monoton (setiap bin minimal 5% akun), ditransformasi ke WoE, lalu masuk regresi logistik.</p>"
-                  + r.figure(V.funnel(fsteps), "Jumlah variabel yang tersisa setelah setiap langkah",
+                  + r.figure(V.funnel(fsteps, xlabel="jumlah variabel tersisa", ylabel="langkah waterfall"), "Jumlah variabel yang tersisa setelah setiap langkah",
                              "waterfall_summary.csv")
                   + r.table(_tbl([{"langkah": x.step, "aturan": x.criterion,
                                    "dibuang": int(x.n_dropped) or "", "ditambah": int(x.n_added) or ""}
@@ -332,7 +339,8 @@ def build(office, cut: str | None = None) -> str:
         items = [({"train": "Train", "test": "Test", "oot": "OOT"}.get(k, k), v["gini"]) for k, v in perf.items()]
         r.chapter("Performa model", "Seberapa baik skor memisahkan bad dari good, dan seberapa stabil.",
                   r.figure(V.vbars(items, fmt=lambda v: f"{v:.2f}", h=240,
-                                   colors=[V.ACCENT if lab == "OOT" else V.GREY for lab, _ in items]),
+                                   colors=[V.ACCENT if lab == "OOT" else V.GREY for lab, _ in items],
+                                   xlabel="sampel", ylabel="Gini"),
                            "Gini per sampel", "performance.json")
                   + r.table(_tbl(prow, ["sampel", "akun", "bad rate", "Gini", "KS", "AUC", "PSI"],
                                  {"akun", "bad rate", "Gini", "KS", "AUC", "PSI"}), "Ukuran performa per sampel")
@@ -365,7 +373,8 @@ def build(office, cut: str | None = None) -> str:
                 f"<b>Bobot</b> {a['share']:.0%} dari rentang skor, IV {a['iv']:.2f}; {pattern}.</p>"
                 "<div class='two'>"
                 + r.figure(V.vbars(items, colors=[V.ALERT if k in low else V.GREY for k in range(len(items))], h=200,
-                                   sub=[f"{x['points']} poin" for x in a["bins"]]),
+                                   sub=[f"{x['points']} poin" for x in a["bins"]],
+                                   xlabel="bin (poin di bawah)", ylabel="bad rate"),
                            f"Bad rate per bin, {names.get(v, v)} (poin di bawah)")
                 + f"<div><p><b>Bin per bin.</b> Bin paling berisiko ({esc(w['label'])}, {w['pct']:.0%} pemohon) "
                   f"punya bad rate {w['index']:.1f}× rata-rata portofolio dan mendapat {w['points']} poin; yang paling "
@@ -398,7 +407,8 @@ def build(office, cut: str | None = None) -> str:
                 f"ideal: <b>{bc['bands']} kelompok</b>, yaitu {esc(bc['rule'])}.</p>"
                 + r.figure(V.vbars([(str(x["kelompok"]), float(x["KS train"])) for x in path],
                                    fmt=lambda v: f"{v:.2f}", h=220,
-                                   colors=[V.ACCENT if x["_c"] else V.GREY for x in path]),
+                                   colors=[V.ACCENT if x["_c"] else V.GREY for x in path],
+                                   xlabel="jumlah kelompok skor", ylabel="KS (train)"),
                            "KS skor yang sudah dikelompokkan, menurut jumlah kelompok (terpilih berwarna)",
                            "band_path.csv")
                 + r.table(_tbl(path, cols, set(cols) - {"kelompok"}, hl=lambda x: x["_c"]),
@@ -440,7 +450,8 @@ def build(office, cut: str | None = None) -> str:
                   + ("Batasnya sudah disepakati Boss.</p>" if agreed else "Ini masih usulan Citra untuk didiskusikan.</p>")
                   + r.figure(V.vbars([(x, lvi.loc[x, "bad_rate_train"]) for x in order],
                                      colors=[V.LEVEL_COLORS[x] for x in order], h=220,
-                                     sub=[f"{lvi.loc[x, 'score_min']:.0f}–{lvi.loc[x, 'score_max']:.0f}" for x in order]),
+                                     sub=[f"{lvi.loc[x, 'score_min']:.0f}–{lvi.loc[x, 'score_max']:.0f}" for x in order],
+                                     xlabel="kategori risiko (rentang skor di bawah)", ylabel="bad rate"),
                              "Bad rate per kategori risiko (rentang skor di bawah)")
                   + r.table(_tbl(rows, ["kategori", "kelompok", "skor", "% akun", "bad rate", "kebijakan (ilustrasi)"],
                                  {"% akun", "bad rate"}, raw=True), "Kategori risiko dan kebijakan ilustratif")

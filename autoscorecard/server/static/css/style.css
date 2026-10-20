@@ -17,6 +17,7 @@ button { font: inherit; cursor: pointer; border: 1px solid var(--rule); backgrou
 button:hover { border-color: var(--acc); }
 button.primary { background: var(--acc); color: #fff; border-color: var(--acc); }
 button.ghost { background: transparent; }
+button:disabled, button:disabled:hover { opacity: .45; cursor: default; border-color: var(--rule); }
 .hidden { display: none !important; }
 .muted { color: var(--muted); }
 .chip { font-size: 12px; padding: 3px 8px; border-radius: 99px; border: 1px solid var(--rule);

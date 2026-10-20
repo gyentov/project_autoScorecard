@@ -23,7 +23,8 @@ from ..llm import LLMRequest, Message, ToolResult
 from ..llm.router import AllProvidersFailed
 from . import board as B
 from . import costs
-from .characters import MOODS, OFFLINE_LINES, TEAM, WORKING, line, small_talk, system_prompt
+from .characters import (CHATTING, MOODS, OFFLINE_LINES, TEAM, WORK_REQUEST, WORKING, line, small_talk,
+                         system_prompt)
 from .tools import ToolBox
 
 AGENT_KEY = {"laras": "partner", "bening": "prepper", "citra": "modeller",
@@ -428,8 +429,11 @@ class AgentRuntime:
         return agent
 
     @staticmethod
-    def working_line(agent: str) -> str:
-        return random.choice(WORKING[agent])
+    def working_line(agent: str, text: str = "") -> str:
+        """The first words while the answer is prepared: "saya hitung dulu" only when the
+        Boss asked for work; a chat gets a chat."""
+        work = re.search(WORK_REQUEST, text.lower()) and not small_talk(text, agent)
+        return random.choice((WORKING if work else CHATTING)[agent])
 
     # "langsung saya perbaiki", "saya update sekarang": a promise to act in this turn
     PROMISE = re.compile(

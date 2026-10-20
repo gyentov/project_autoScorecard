@@ -170,9 +170,10 @@ class ToolBox:
                   "Isi baris tidak dikirim ke kamu; kamu hanya diberi tahu jumlah baris dan "
                   "kolomnya.", {"n": {"type": "integer"}, "columns": arr(S), **table, **filters,
                                 **title}, [], self.show_sample)
-        self._add("show_vintage", "TAMPILKAN DI PAPAN vintage analysis: persentase akun yang "
-                  "pernah X+ DPD per kohort booking menurut bulan sejak booking (MOB), kurva "
-                  "30+/60+/90+, dan rekomendasi window serta ambang bad. Bahan menentukan target.",
+        self._add("show_vintage", "TAMPILKAN DI PAPAN vintage analysis sebagai prediksi dini NPL "
+                  "(NPL = 90+ DPD, kolektibilitas 3-5): persentase akun yang pernah X+ DPD per kohort "
+                  "menurut MOB, titik infleksi kurva kumulatif (window), berapa persen calon NPL yang "
+                  "sudah Y+ DPD di MOB X, dan rekomendasi window per ambang. Default 90+.",
                   {"threshold": {"type": "integer", "enum": [30, 60, 90]}}, [], self.show_vintage)
         self._add("show_waterfall", "TAMPILKAN DI PAPAN rencana waterfall saat ini: urutan "
                   "langkah, aktif/tidak, dan kriteria tiap langkah.", {}, [], self.show_waterfall)
@@ -260,21 +261,30 @@ class ToolBox:
 
     def show_vintage(self, threshold: int | None = None) -> dict:
         from ..engine import vintage as V
-        vin = self.office.vintage()
+        vin = self.office.vintage(threshold)
         if not vin:
             raise ValueError("vintage butuh tabel riwayat performa bulanan (kolom id akun, "
                              "mob atau tanggal snapshot, dan dpd), dibaca setelah join")
-        rec, c = vin["rec"], vin["curves"]
-        t = int(threshold or rec["threshold"])
-        rows = [{"ambang": f"{r['threshold']}+", "MOB matang": r["mature_mob"],
-                 "window": r["window"], "bad rate": round(r["bad_rate"], 4), "bad": r["bads"],
+        rec, c, cap = vin["rec"], vin["curves"], vin["capture"]
+        t, w = rec["threshold"], rec["window"]
+        rows = [{"ambang": f"{r['threshold']}+", "titik infleksi": r["mature_mob"],
+                 "window": r["window"], "bad terlihat": round(r["share_of_last"], 3),
+                 "bad rate": round(r["bad_rate"], 4), "bad": r["bads"],
                  "akun matang": r["n_mature"]} for r in rec["by_threshold"]]
-        self._show(f"Vintage {t}+ DPD", V.curves_svg(c, t, rec["window"], f"Pernah {t}+ DPD, per "
-                   "kuartal booking") + V.curves_svg(c, None, rec["window"], "Semua kohort")
+        early = cap[cap.mob == w].set_index("threshold")
+        self._show(f"Vintage {t}+ DPD", f"<p>{V.NPL_NOTE}</p>"
+                   + V.curves_svg(c, t, w, f"Pernah {t}+ DPD, per kuartal booking")
+                   + V.inflection_svg(c, w, "Titik infleksi: bagian bad kumulatif yang sudah terlihat")
+                   + V.capture_svg(cap, w, f"Prediksi dini: calon NPL yang sudah Y+ DPD di MOB X")
                    + html_table(rows))
         return {"shown_on_board": f"Vintage {t}+ DPD", "history_table": vin["spec"]["table"],
-                "recommendation": {k: rec[k] for k in ("threshold", "window", "bad_rate",
-                                                       "bads", "n_mature", "enough")},
+                "npl": V.NPL_NOTE,
+                "recommendation": {k: rec[k] for k in ("threshold", "window", "bad_rate", "bads",
+                                                       "n_mature", "enough", "share_of_last",
+                                                       "horizon", "suggest")},
+                "early_prediction_at_window": {f"{k}+": {"capture": round(float(r.capture), 3),
+                                                         "precision": round(float(r.precision), 3)}
+                                               for k, r in early.iterrows()},
                 "by_threshold": rows}
 
     def show_waterfall(self) -> dict:

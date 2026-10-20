@@ -27,7 +27,7 @@ class ConversationMixin:
         """Before the answer ($0, instant): who will answer, and her first words."""
         m = self.meetings.get(meeting_id) if meeting_id else None
         agent = self.agents.who(text, to, self._default_speaker(m), m.attendees if m else None)
-        return {"agent": agent, "line": self.agents.working_line(agent)}
+        return {"agent": agent, "line": self.agents.working_line(agent, text)}
 
     def say(self, text: str, meeting_id: str | None = None, to: str | None = None,
             cost_ok: bool = False, candid: bool = False) -> dict:

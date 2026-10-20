@@ -18,9 +18,21 @@ def esc(s) -> str:
     return html.escape(str(s))
 
 
-def _svg(w: int, h: int, body: str, label: str) -> str:
-    return (f'<svg viewBox="0 0 {w} {h}" width="100%" role="img" aria-label="{esc(label)}" '
-            f'style="{FONT};max-height:100%">{body}</svg>')
+AXIS = 20                          # room for an axis title, left (rotated) and below
+
+
+def _svg(w: int, h: int, body: str, label: str, xlabel: str = "", ylabel: str = "") -> str:
+    """The chart, with its axis titles: `ylabel` rotated along the left edge, `xlabel`
+    centred below. Every x/y chart passes both, so a reader never guesses the units."""
+    dx, dh = (AXIS if ylabel else 0), (AXIS if xlabel else 0)
+    out = f'<g transform="translate({dx},0)">{body}</g>' if dx else body
+    if ylabel:
+        out += (f'<text transform="translate(13,{h / 2:.1f}) rotate(-90)" font-size="11" fill="{MUTED}" '
+                f'text-anchor="middle">{esc(ylabel)}</text>')
+    if xlabel:
+        out += _text(dx + w / 2, h + dh - 5, xlabel, 11, MUTED, "middle")
+    return (f'<svg viewBox="0 0 {w + dx} {h + dh}" width="100%" role="img" aria-label="{esc(label)}" '
+            f'style="{FONT};max-height:100%">{out}</svg>')
 
 
 def _text(x, y, s, size=13, fill=INK, anchor="start", weight=400) -> str:
@@ -30,7 +42,7 @@ def _text(x, y, s, size=13, fill=INK, anchor="start", weight=400) -> str:
 
 def hbars(items: list[tuple[str, float]], fmt=lambda v: f"{v:.0%}", focus: set[int] | None = None,
           w: int = 620, label_w: int = 230, row: int = 30, note: dict[int, str] | None = None,
-          title: str = "") -> str:
+          title: str = "", *, xlabel: str, ylabel: str) -> str:
     """Horizontal bars, largest first as given; `focus` rows in the accent, others grey;
     values written at the bar end."""
     focus = focus if focus is not None else {0}
@@ -50,12 +62,12 @@ def hbars(items: list[tuple[str, float]], fmt=lambda v: f"{v:.0%}", focus: set[i
                          weight=600 if k in focus else 400))
         if k in note:
             out.append(_text(label_w + ln + 70, y + row * 0.62, note[k], 12, ACCENT))
-    return _svg(w, h, "".join(out), title)
+    return _svg(w, h, "".join(out), title, xlabel, ylabel)
 
 
 def vbars(items: list[tuple[str, float]], fmt=lambda v: f"{v:.0%}", colors: list[str] | None = None,
           w: int = 640, h: int = 300, flag: set[int] | None = None, title: str = "",
-          sub: list[str] | None = None) -> str:
+          sub: list[str] | None = None, *, xlabel: str, ylabel: str) -> str:
     """Vertical bars with the value on top and the category below; `flag` marks bars in
     the alert colour (e.g. a break in a trend)."""
     flag = flag or set()
@@ -74,14 +86,15 @@ def vbars(items: list[tuple[str, float]], fmt=lambda v: f"{v:.0%}", colors: list
         out.append(_text(x + bw / 2, h - pad_b + 16, lab, 12, MUTED, "middle"))
         if sub:
             out.append(_text(x + bw / 2, h - pad_b + 31, sub[k], 11, MUTED, "middle"))
-    return _svg(w, h, "".join(out), title)
+    return _svg(w, h, "".join(out), title, xlabel, ylabel)
 
 
 def lines(series: list[dict], xmax: int, ymax: float | None = None, w: int = 660, h: int = 330,
-          xlabel: str = "", marker: tuple[float, str] | None = None, title: str = "") -> str:
+          marker: tuple[float, str] | None = None, title: str = "", *, xlabel: str, ylabel: str,
+          pct: bool = True) -> str:
     """Line chart: series {"name", "x", "y", "focus"}; focus lines in the accent and thick,
     context lines thin grey; names written at the line ends (pushed apart, never stacked)."""
-    L, R, T, B = 46, 150, 16, 34
+    L, R, T, B = 46, 150, 16, 26
     top = ymax or max(max(s["y"]) for s in series if s["y"]) * 1.12 or 0.01
     step = next(st for st in (0.01, 0.02, 0.025, 0.05, 0.1, 0.2, 0.25) if top / st <= 5)
     top = math.ceil(top / step) * step
@@ -91,12 +104,10 @@ def lines(series: list[dict], xmax: int, ymax: float | None = None, w: int = 660
     for k in range(int(round(top / step)) + 1):
         v = k * step
         out.append(f'<line x1="{L}" x2="{w - R}" y1="{sy(v):.1f}" y2="{sy(v):.1f}" stroke="{RULE}"/>')
-        out.append(_text(L - 8, sy(v) + 4, f"{v:.0%}", 11, MUTED, "end"))
+        out.append(_text(L - 8, sy(v) + 4, f"{v:.0%}" if pct else f"{v:g}", 11, MUTED, "end"))
     tick = 1 if xmax <= 12 else 3
     for m in range(tick, xmax + 1, tick):
         out.append(_text(sx(m), h - B + 18, m, 11, MUTED, "middle"))
-    if xlabel:
-        out.append(_text((L + w - R) / 2, h - 2, xlabel, 11, MUTED, "middle"))
     if marker:
         x, lab = marker
         out.append(f'<line x1="{sx(x):.1f}" x2="{sx(x):.1f}" y1="{T}" y2="{h - B}" stroke="{INK}" '
@@ -117,10 +128,11 @@ def lines(series: list[dict], xmax: int, ymax: float | None = None, w: int = 660
     for y, x, name, foc, col in ends:
         out.append(_text(w - R + 8, y + 4, name, 12 if foc else 11,
                          col or (ACCENT if foc else MUTED), weight=700 if foc else 400))
-    return _svg(w, h, "".join(out), title)
+    return _svg(w, h, "".join(out), title, xlabel, ylabel)
 
 
-def funnel(steps: list[tuple], w: int = 660, row: int = 34, title: str = "") -> str:
+def funnel(steps: list[tuple], w: int = 660, row: int = 34, title: str = "", *, xlabel: str,
+           ylabel: str) -> str:
     """The waterfall as a funnel: (step, features left, removed[, added]); what the step
     removed (and added back) is written beside it; the final set in the accent."""
     top = max(s[1] for s in steps) or 1
@@ -140,7 +152,7 @@ def funnel(steps: list[tuple], w: int = 660, row: int = 34, title: str = "") -> 
             out.append(_text(label_w + ln + 36, y + row * 0.6, f"−{dropped}", 12, ALERT))
         if added:
             out.append(_text(label_w + ln + (66 if dropped else 36), y + row * 0.6, f"+{added}", 12, ACCENT))
-    return _svg(w, row * len(steps) + 8, "".join(out), title)
+    return _svg(w, row * len(steps) + 8, "".join(out), title, xlabel, ylabel)
 
 
 def stacked_share(parts: list[tuple[str, float, str]], w: int = 640, h: int = 46) -> str:
