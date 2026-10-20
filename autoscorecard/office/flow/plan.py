@@ -7,6 +7,7 @@ import pandas as pd
 
 from ...engine.waterfall import approve_plan, load_plan, parse_steps, save_plan
 from ...engine.waterfall_report import plan_svg
+from .. import edareview as ER
 from ..meetings import _page, choice, html_table, light_only, say
 from .common import adjourn_choice, plan_diff
 
@@ -28,12 +29,25 @@ class PlanMixin:
                 "korelasi, lalu stepwise, forward, backward, dan finalisasi.", 1),
             say("citra", "serious", "Model tidak saya bangun sebelum rencana ini di-ACC.", 1),
         ]
+        slides = self._plan_slides(steps)
+        eda = next((k for k, sl in enumerate(slides) if sl[0] == "EDA Bening & diskusi"), None)
+        doc = ER.working(self.project)
+        if eda is not None and doc:
+            n_dis = len(doc["discussions"])
+            script.insert(2, say("citra", "thinking", f"EDA Bening juga sudah saya baca: "
+                                 f"{len(doc['points'])} poin, {n_dis} saya tidak setuju dan sudah kami "
+                                 "diskusikan; notulennya sudah dicek Laras. Hasilnya di slide ini.", eda))
+        props = [p for p in self.proposals.list("pending") if p.id in self._eda_proposal_ids(doc or
+                                                                                         {"review": {}, "discussions": {}})]
         self.timeline.set("waterfall_plan", "waiting_boss")
         self._status("citra", "waiting_boss", "rapat rencana waterfall")
         mt = self.meetings.create(
             "plan", "Rapat rencana waterfall", "citra", ["laras", "citra"],
-            self._plan_slides(steps), script,
-            [choice("acc", "ACC rencana, bangun Cut 1", "plan_acc"),
+            slides, script,
+            [*[c for p in props for c in (
+                choice(f"acc_{p.id}", f"ACC (EDA): {p.summary}", "proposal", pid=p.id, accept=True),
+                choice(f"rej_{p.id}", f"Tolak (EDA): {p.summary}", "proposal", pid=p.id, accept=False))],
+             choice("acc", "ACC rencana, bangun Cut 1", "plan_acc"),
              choice("edit", "✏ Edit rencana waterfall sendiri (drag & drop)", "edit_waterfall"),
              adjourn_choice()],
             context="Rapat rencana waterfall: " + "; ".join(
@@ -52,6 +66,8 @@ class PlanMixin:
             slides.append(("Kamus variabel (Bening)", html_table(
                 [{k: r[k] for k in ("variabel", "arti", "satuan", "dasar", "keyakinan")} for r in vm]),
                 "html"))
+        if (eda := self._eda_slide()) is not None:
+            slides.append(eda)
         return slides
 
     def _refresh_plan_slides(self, m) -> None:

@@ -29,6 +29,7 @@ apologetic, excited, serious, surprised.
 | Data & join | Bening | no meeting: at her desk she profiles every table you handed over, picks the base table, tries the candidate keys for each table and keeps the best by rule (one-to-many tables are aggregated); the "Catatan join data" memo lists what she used and what else she tried, and the Cut 1 meeting reports what each table brought to the model | none; say so if you want another join |
 | Target definition | Bening | **vintage analysis first** when there is a monthly performance table (see below): cumulative 30+/60+/90+ DPD curves per booking quarter by months on book, the window where the curve flattens and the strictest threshold with enough bads; she proposes "ever T+ DPD within W months" from that history (immature accounts excluded) and offers the summary column as an alternative. Without history: proposes `bad` from summary columns (outcome-table columns first), bad rate overall and per quarter, out-of-time split (≈ latest 15%), candidate features with reasons for every excluded column | ACC, or pick an offered alternative |
 | Data dictionary | Bening | memo listing missing descriptions / guessed types; does not block modelling | upload a dictionary any time |
+| EDA & discussion | Bening → Citra → Laras | no meeting: Bening's EDA report and points, Citra's review, their discussion of the points she disagrees with, Laras's check of the minutes (see below) | ACC / reject the proposals it produced (in the plan meeting); answer escalated points |
 | Waterfall plan | Citra | the plan diagram and criteria; "✏ Edit rencana waterfall sendiri" opens the editor | edit it yourself, then ACC plan → Cut 1 is built |
 | Cut 1 | Citra | build runs in the background (live progress), results email + presentation | type feedback, ACC proposals, go to Cut 2 |
 | Cut 2 (final) | Citra | build with the ACC'd changes, comparison with Cut 1 | confirm final, or extend |
@@ -79,6 +80,68 @@ difference, sum, product, log, flag (a comparison) or a missing flag. Bening sho
 preview on the training sample (IV, strength, missing rate); after the Boss's ACC the
 variable is added to the dataset every time it is loaded, joins the dictionary (meaning =
 its formula, reviewed by Laras), and is a candidate in the next cut (also after Cut 1).
+
+## Bening's EDA, Citra's review, and the discussion Laras checks
+
+After the dictionary, before Citra plans the waterfall, Bening runs the EDA
+(`engine/eda.py`, $0, all rule-based):
+
+- **Descriptive statistics** per candidate feature: count, missing, distinct values, share
+  of the most common value; numeric: mean, std, min, p1/p5/p25/median/p75/p95/p99, max,
+  skewness, kurtosis, share of zeros and negatives, IQR outliers, sentinel codes (negative
+  all-nines values: -9999999999 and longer, e.g. -999999999999, in any column; -1, -9,
+  -999 ... only where every other value is >= 0; a positive amount such as 999999 is never
+  a code, because it is a real amount in rupiah or dong); categorical: top categories with share
+  and bad rate, rare categories.
+- **Against the target** (development rows only, never the OOT): bad rate when missing vs
+  filled (two-proportion z-test), univariate AUC, and the bad-rate trend over five
+  quantile bands.
+- **Stability**: development vs the out-of-time rows (or the latest 30% by date): PSI,
+  missing rate in both, and whether the bands' risk order holds (Spearman rho).
+- **Together**: Spearman correlation; pairs with |rho| >= 0.9.
+
+From those numbers Bening raises numbered **points** (P1, P2, ...), each with a finding and
+a recommendation: constant (>= 95% one value) → drop; missing >= 30% → drop; sentinel code
+→ treat as missing; outliers with a far tail → cap; univariate AUC >= 0.80 → suspected
+leak, drop; PSI >= 0.25 → drop; PSI 0.10-0.25 → monitor; |rho| >= 0.9 → keep the stronger;
+plus notes (weak, skewed, rare categories, bad rate moving between periods, duplicates).
+
+**Citra reviews every point** (`office/edareview.py`), setuju or tidak setuju with a reason
+from the numbers and the waterfall plan. She disagrees when missingness is informative
+(the bad rate of missing rows differs, p < 0.05), with capping outliers while the outlier
+treatment is "none" (open-ended end bins already contain them), with a "leak" that is
+strong but not obviously one (AUC < 0.90 and no outcome-like name), with dropping a
+shifted variable whose risk order holds (rho >= 0.8), and with dropping one of a correlated
+pair while the waterfall's correlation clustering will choose by IV.
+
+**Every point she disagrees with is discussed**: Bening states her evidence, Citra hers,
+Bening answers, Citra closes, and the outcome is recorded: *ikut Citra*, *ikut Bening*,
+*kompromi* (e.g. the variable follows the waterfall rule and a missing flag `<var>_mis` is
+proposed), or *diputuskan Boss* (a question for the Boss plus a proposal: ACC = Bening's
+view, reject = Citra's). Drops both agree on that the waterfall will not make by itself
+become `exclude_feature` proposals. Nothing changes the model without the Boss's ACC; the
+plan meeting shows the EDA slide and offers these proposals as ACC / Tolak choices.
+
+**Laras checks the minutes** before they count as documentation: a disagreed point with no
+discussion, a discussion without both sides, an opening argument without a number, a
+resolution without outcome / decision / reason, an escalation without a question for the
+Boss, or an agreed or resolved drop without its proposal blocks it. Bening (the
+note-taker) fixes it from the evidence on record and Laras checks again, up to three
+rounds; escalated points and pending proposals are listed for the Boss. Only an approved
+version (`work/eda_approved.json`) goes into the model documentation (chapter "Analisis
+data eksploratif (EDA)", with the minutes).
+
+Mails, in order: "Laporan EDA" (Bening, with `artifacts/eda_bening.html`), "Tanggapan EDA
+Bening" (Citra), "Review notulen diskusi EDA" (Laras). Files: `work/eda.json` (every
+number), `eda_points.json` (points, review, discussions), `eda_review.json` and its
+history. The timeline has an "EDA & diskusi" milestone between the target and the plan.
+
+**Later.** Citra can raise or re-open a point with her `dispute_eda_point` tool, and the Boss
+can start it for free: "diskusikan P3: missing-nya informatif, bad rate 12% vs 5%". Bening
+answers from her evidence; if they still differ the Boss decides; Laras checks the new
+version. "eda" (or "eda cust_age") puts the points or one variable's statistics on the
+board ($0); every teammate can read the approved EDA with the `eda` tool; "jalankan EDA
+lagi" is an order Bening does at once (`run_eda`).
 
 ## Citra's report at every cut
 
@@ -530,7 +593,7 @@ no build step).
 data handover, messages), `relays` (orders dispatched, relays, ad hoc meetings),
 `conversation` (what the Boss types, the free rule-based replies, meeting turns),
 `stages` (kickoff, data, target, vintage), `deliverables_orders`, `dictionary` (versions,
-review, meanings, derived variables), `plan` (waterfall plan), `cuts` (builds, results
+review, meanings, derived variables), `eda` (EDA, Citra's review, discussion, Laras's check), `plan` (waterfall plan), `cuts` (builds, results
 meeting) and `score_report` (contribution, bands, KS, risk levels); `flow/common.py` holds
 the shared helpers. A new domain is a new mixin added to `Office`'s bases.
 

@@ -3,7 +3,8 @@ report in Indonesian, HTML + CSS (prints to A4 with proper margins).
 
 Cover, contents, executive summary with the key figures, then numbered chapters:
 background and data, bad definition and vintage, the variable dictionary (only the
-version Laras approved), the development process (waterfall), hyperparameter tuning,
+version Laras approved), Bening's EDA with Citra's review and their discussion (only the
+minutes Laras approved), the development process (waterfall), hyperparameter tuning,
 performance, every model variable bin by bin, the score bands (20 -> ideal, with the KS
 table), the VL-VH risk levels, decisions and the audit trail, and a methodology appendix.
 Every figure and table is numbered and sourced; every chapter ends with what it means
@@ -16,6 +17,7 @@ from datetime import datetime
 
 from . import deck as K
 from . import deckviz as V
+from . import edadoc as ED, edareview as ER
 from .dictreview import last_review
 
 LEVEL_ID = {"VH": "Sangat tinggi", "H": "Tinggi", "M": "Sedang", "L": "Rendah", "VL": "Sangat rendah"}
@@ -245,6 +247,44 @@ def build(office, cut: str | None = None) -> str:
                              ["variabel", "arti", "satuan", "dasar", "status"]), "Arti variabel di model")
               + _so("setiap variabel yang menggerakkan keputusan kredit punya arti yang bisa dijelaskan ke "
                     "nasabah, auditor dan regulator.", alert=bool(doubt)))
+
+    # ---- 4b. EDA (approved minutes only)
+    edoc, estats = ER.approved(office.project), ER.stats(office.project)
+    if edoc and estats:
+        ov, rs = estats["overview"], edoc["review_status"]
+        rows = ED.points_rows(edoc)
+        asks = [x for x, p in zip(rows, edoc["points"]) if p["action"] != "note"]
+        disc = "".join(
+            f"<h4>{esc(pid)} · {esc(', '.join(d['variables']))}</h4>"
+            + "".join(f"<p><b>{esc(ED.NAME.get(t['by'], t['by']))}:</b> {esc(t['text'])}</p>" for t in d["turns"])
+            + f"<p><b>Hasil ({esc(ER.OUTCOMES[d['resolution']['outcome']])}):</b> {esc(d['resolution']['decision'])} "
+              f"Alasan: {esc(d['resolution']['reason'])}"
+            + (f" Pertanyaan untuk Boss: {esc(d['resolution']['question_for_boss'])}"
+               if d["resolution"].get("question_for_boss") else "") + "</p>"
+            for pid, d in edoc["discussions"].items())
+        weak = sorted([v for v in estats["variables"] if v["target"].get("auc")],
+                      key=lambda v: -v["target"]["auc"])[:10]
+        r.chapter("Analisis data eksploratif (EDA)", "Kualitas dan perilaku data sebelum modelling, "
+                  "dan apa yang disepakati tim.",
+                  f"<p>Bening menghitung statistik deskriptif {ov['features']} kandidat fitur dari {ov['rows_known']:,} "
+                  f"baris (bad rate {ov['bad_rate']:.1%}): missing, kuantil, outlier IQR, kode nilai, hubungan "
+                  "dengan target (AUC univariat, bad rate saat missing) di data pengembangan, stabilitas (PSI) "
+                  f"terhadap {ov['rows_late']:,} baris terbaru, dan korelasi Spearman. Dari situ ia mengajukan "
+                  f"{len(rows)} poin; Citra menanggapi tiap poin, {len(edoc['discussions'])} poin yang tidak ia "
+                  "setujui didiskusikan, dan notulennya dicek Laras "
+                  + ("<span class='badge'>lolos review Laras</span>" if rs.get("status") == "approved" else
+                     "<span class='badge warn'>belum lolos review</span>")
+                  + f" (versi {esc(rs.get('version', '-'))}). Laporan EDA lengkap ada di artifacts/eda_bening.html.</p>"
+                  + r.table(_tbl([{"variabel": v["variable"], "AUC": f"{v['target']['auc']:.3f}",
+                                   "missing": f"{v['missing_rate']:.1%}",
+                                   "PSI": f"{(v.get('stability') or {}).get('psi') or 0:.3f}"} for v in weak],
+                                 ["variabel", "AUC", "missing", "PSI"], {"AUC", "missing", "PSI"}),
+                            "Sepuluh kandidat dengan daya pembeda univariat tertinggi")
+                  + (r.table(_tbl(asks, ["poin", "variabel", "usul Bening", "Citra", "hasil"]),
+                             "Poin EDA yang meminta tindakan dan hasilnya") if asks else "")
+                  + (f"<h3>Notulen diskusi Bening–Citra</h3>{disc}" if disc else "")
+                  + _so("masalah data (missing, kode nilai, pergeseran, kebocoran) dibahas dan diputuskan sebelum "
+                        "model dibangun, dengan alasan yang tercatat; yang tidak bisa diputuskan tim dibawa ke Boss."))
 
     # ---- 5. development process
     wf = f["wf"]

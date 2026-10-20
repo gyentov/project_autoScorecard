@@ -49,6 +49,7 @@ Written in plain Python with numpy/pandas only, so every number can be traced. y
 | `waterfall.py` | the **modelling waterfall**: ordered, configurable selection steps (missing rate → identical rate → IV → correlation clustering → stepwise → forward → backward → finalization), plan save/approve |
 | `waterfall_report.py` | plan diagram (SVG + Mermaid) shown before modelling; waterfall report (Markdown + SVG) after |
 | `dictionary.py` | data dictionary of the raw data (descriptions, variable types, lineage of derived columns, counts, nulls, min/max) and outlier detection / treatment |
+| `eda.py` | descriptive statistics and EDA: missing, quantiles, outliers, sentinel codes, categories, missing vs filled bad rate, univariate AUC and trend, PSI and risk-order stability, Spearman correlation; Bening's rule-based points |
 | `finalization.py` | forced features, manual bin / WoE edits, and the draft → confirmed step for each build |
 | `pipeline.py` | `build_scorecard`: split → waterfall → scaling → validation; writes the audit log and `artifacts/` |
 

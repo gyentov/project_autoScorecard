@@ -295,10 +295,11 @@ def test_timeline_extension_and_gantt(tmp_path):
     proj = ProjectStore(tmp_path / "p").create("T")
     tl = Timeline(proj)
     pos = tl.slots()
-    assert pos["kickoff"] == (1, 1) and pos["dictionary"] == (2, 4) and pos["deck"] == (7, 7)
+    assert pos["kickoff"] == (1, 1) and pos["dictionary"] == (2, 4) and pos["eda"] == (4, 4)
+    assert pos["deck"] == (8, 8)
     tl.add_extension("Boss minta revisi")
     assert [m.id for m in tl.cuts()] == ["cut1", "cut2", "cut3"]
-    assert tl.get("deck").depends_on == ["cut3"] and tl.slots()["deck"] == (8, 8)
+    assert tl.get("deck").depends_on == ["cut3"] and tl.slots()["deck"] == (9, 9)
     assert tl.get("cut3").title.endswith("(final)") and not tl.get("cut2").title.endswith("(final)")
     xml.dom.minidom.parseString(gantt_svg(tl))
 
@@ -883,3 +884,120 @@ def test_laras_review_finds_and_bening_fixes():
     assert rev["status"] == "approved" and len(rev["rounds"]) == 2
     assert "konfirmasi" in rows[0]["arti"] and "konfirmasi" in rows[2]["arti"]
     assert any(n["item"] == "el" for n in rev["notes"])             # still for the Boss
+
+
+# --------------------------------------------------------------------------- EDA
+
+def _eda_frame(n=4000, seed=1):
+    import numpy as np
+    rng = np.random.default_rng(seed)
+    d = pd.DataFrame({"app_date": pd.date_range("2023-01-01", periods=n, freq="4h")})
+    risk = rng.normal(size=n)
+    y = (rng.random(n) < 1 / (1 + np.exp(-(risk * 1.2 - 1.6)))).astype(int)
+    d["income"] = np.where(rng.random(n) < 0.02, -999999999999, rng.lognormal(11, 0.4, n).round())
+    d["income"] = np.where(rng.random(n) < 0.02, 999999, d["income"])     # a real amount in rupiah
+    d["balance"] = np.where(rng.random(n) < 0.02, -999, rng.normal(0, 5e6, n).round())  # can be < 0
+    d["spouse_inc"] = np.where((rng.random(n) < 0.35 + 0.3 * y), np.nan, rng.normal(5, 1, n))  # informative
+    d["flat"] = np.where(rng.random(n) < 0.97, 1, 0)
+    d["leak_ish"] = risk + rng.normal(size=n) * 0.8 + y * 0.8                             # strong, no name hint
+    d["dpd_after"] = y * 30 + rng.integers(0, 3, n)                                           # leak with a name
+    late = np.arange(n) >= int(n * 0.7)
+    d["shift"] = risk + np.where(late, 2.0, 0)                                               # PSI up, order kept
+    d["twin_a"] = risk + rng.normal(size=n) * 0.05
+    d["twin_b"] = d["twin_a"] * 2 + rng.normal(size=n) * 0.01
+    return d, pd.Series(y, index=d.index)
+
+
+def test_eda_measures_and_raises_points():
+    from autoscorecard.engine import eda as E
+    df, y = _eda_frame()
+    feats = [c for c in df.columns if c != "app_date"]
+    eda = E.describe(df, y, feats, date_col="app_date")
+    v = {r["variable"]: r for r in eda["variables"]}
+    assert eda["overview"]["rows_late"] == pytest.approx(len(df) * 0.3, rel=0.02)
+    assert [s["value"] for s in v["income"]["sentinels"]] == [-999999999999]   # 999999 is not a code
+    assert v["balance"]["sentinels"] == []                     # -999 where negatives are normal
+    assert E.is_code(-1) and E.is_code(-999999999999) and not E.is_code(999999) and not E.is_code(-1000)
+    assert v["spouse_inc"]["target"]["missing_p_value"] < 0.001
+    assert v["shift"]["stability"]["psi"] > 0.25 and v["shift"]["stability"]["rank_rho"] >= 0.8
+    assert v["dpd_after"]["target"]["auc"] > 0.95
+    assert {p["a"] for p in eda["correlated_pairs"]} | {p["b"] for p in eda["correlated_pairs"]} >= {"twin_a", "twin_b"}
+    kinds = {(p["kind"], p["variables"][0]) for p in E.points(eda) if p["variables"]}
+    assert {("sentinel", "income"), ("high_missing", "spouse_inc"), ("constant", "flat"),
+            ("leakage", "leak_ish"), ("leakage", "dpd_after"), ("unstable", "shift")} <= kinds
+    json.dumps(eda, allow_nan=False)                                # plain numbers, no NaN
+
+
+def test_citra_reviews_they_discuss_and_laras_checks():
+    from autoscorecard.engine import eda as E
+    from autoscorecard.office import edareview as ER
+    df, y = _eda_frame()
+    eda = E.describe(df, y, [c for c in df.columns if c != "app_date"], date_col="app_date")
+    doc = {"points": E.points(eda), "review": {}, "discussions": {}}
+    plan = {"missing_rate": {"max": 0.3}, "identical_rate": {"max": 0.95},
+            "correlation_cluster": {"threshold": 0.7}}
+    for p in doc["points"]:
+        doc["review"][p["id"]] = ER.citra_review(p, eda, plan)
+    by = {(p["kind"], p["variables"][0] if p["variables"] else ""): p["id"] for p in doc["points"]}
+    rv = lambda k: doc["review"][by[k]]                                       # noqa: E731
+    assert rv(("high_missing", "spouse_inc"))["stance"] == "tidak setuju"     # missing is informative
+    assert rv(("leakage", "leak_ish"))["stance"] == "tidak setuju"
+    assert rv(("leakage", "dpd_after"))["stance"] == "setuju"                  # the name says outcome
+    assert rv(("unstable", "shift"))["stance"] == "tidak setuju"               # risk order holds
+    assert rv(("constant", "flat"))["waterfall"]                               # the waterfall drops it
+    made = []
+    propose = lambda spec, reason: made.append(spec) or f"x{len(made)}"       # noqa: E731
+    first = ER.check(doc)                                                     # nothing discussed yet
+    assert any(f["problem"].startswith("Citra tidak setuju") for f in first)
+    review = ER.run(doc, propose)
+    assert review["status"] == "approved" and len(review["rounds"]) >= 2
+    d = doc["discussions"]
+    assert d[by[("high_missing", "spouse_inc")]]["resolution"]["outcome"] == "kompromi"
+    esc = d[by[("leakage", "leak_ish")]]["resolution"]
+    assert esc["outcome"] == "eskalasi_boss" and esc["question_for_boss"] and esc["proposal_id"]
+    assert {"kind": "derive_variable", "payload": {"name": "spouse_inc_mis", "op": "missing",
+                                                   "a": "spouse_inc"}} in made
+    assert {"kind": "exclude_feature", "payload": {"feature": "dpd_after"}} in made     # agreed drop
+    assert any(n["problem"] == "menunggu keputusan Boss" for n in review["notes"])
+    # a minute without evidence or a reason is caught and fixed from the record
+    k = by[("unstable", "shift")]
+    d[k]["turns"][1]["text"] = "Saya kurang setuju."
+    d[k]["resolution"]["reason"] = ""
+    blk = [f["problem"] for f in ER.check(doc) if f["blocking"]]
+    assert "argumen pertama Citra tanpa angka/bukti" in blk and "alasan hasil diskusi kosong" in blk
+    assert ER.run(doc, propose)["status"] == "approved" and "(data: psi=" in d[k]["turns"][1]["text"]
+
+
+def test_eda_in_the_office_flow(office):
+    o = office
+    begin(o)
+    for _ in range(2):                                            # kickoff, target -> plan meeting
+        m = open_meeting(o)
+        o.choose(m.id, "acc")
+    m = open_meeting(o)
+    assert m.kind == "plan" and "EDA Bening & diskusi" in [sl["title"] for sl in m.slides]
+    assert any("EDA Bening" in l["text"] for l in m.script)
+    subjects = [e.subject for e in o.inbox.list()]
+    i = subjects.index("Laporan EDA")
+    assert subjects[i:i + 3] == ["Laporan EDA", "Tanggapan EDA Bening", "Review notulen diskusi EDA: lolos"]
+    assert (o.project.dir("artifacts") / "eda_bening.html").exists()
+    assert o.timeline.get("eda").status in ("done", "waiting_boss")
+    got = o.eda_lookup()
+    assert got["review"] == "approved" and got["points"]
+    from autoscorecard.office.tools import ToolBox
+    assert json.loads(ToolBox(o, "kirana").call("eda", {"name": "cust_age"})[0])["variable"]["n"] > 0
+    assert "dispute_eda_point" in {t.name for t in ToolBox(o, "citra").specs()}
+    # the Boss sees it for free, and Citra raises a point she had agreed with
+    r = o.say("eda", meeting_id=m.id)
+    assert r["agent"] == "citra" and "EDA" in r["text"]              # Bening is not in this meeting
+    pid = next(p["poin"] for p in got["points"] if p["Citra"] == "setuju")
+    r = o.say(f"diskusikan {pid}: menurut saya poin ini tidak perlu, AUC 0.53 masih dipakai", meeting_id=m.id)
+    assert r["agent"] == "citra" and "diputuskan Boss" in r["text"]
+    one = o.eda_lookup(pid)
+    assert one["discussion"]["raised_by"] == "citra" and one["citra"]["stance"] == "tidak setuju"
+    assert o.inbox.list()[-1].subject.startswith("Review notulen diskusi EDA")
+    o.choose(m.id, "acc")                                         # Cut 1, then the documentation
+    from autoscorecard.office.deliverables import documentation
+    d = documentation(o)
+    assert "Analisis data eksploratif (EDA)" in d["sections"]
+    assert "Notulen diskusi Bening" in (o.project.root / d["file"]).read_text()

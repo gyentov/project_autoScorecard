@@ -77,7 +77,9 @@ def tool_label(name: str, args: dict) -> str:
               "project_status": "cek status proyek", "join_plan": "membaca rencana join",
               "dictionary_gaps": "cek kamus data", "assign_task": "membagi tugas ke tim",
               "update_order": "melaporkan status perintah", "document_variables": "mendokumentasikan arti variabel",
-              "make_documentation": "menyusun dokumentasi model", "make_deck": "menyusun draft deck"}
+              "make_documentation": "menyusun dokumentasi model", "make_deck": "menyusun draft deck",
+              "run_eda": "menjalankan EDA", "eda": "membaca EDA Bening", "show_eda": "menampilkan EDA",
+              "dispute_eda_point": "mendiskusikan poin EDA dengan Bening"}
     if name.startswith("propose_"):
         return "menyiapkan usulan untuk ACC"
     return labels.get(name, name.replace("_", " "))
@@ -107,6 +109,11 @@ _RELAY = re.compile(r"(?:titip(?:\s+pesan)?|sampaikan|bilang(?:in)?|kasih\s*tau(
                     re.I | re.S)
 _VIN = re.compile(r"^(?:tampilkan|tunjukkan|lihat|show)?\s*(?:analisis\s+)?vintage"
                   r"(?:\s+(30|60|90)\+?)?\s*$", re.I)
+# "eda", "laporan eda", "eda cust_age"; "diskusikan P3: missing-nya informatif ..."
+_EDA = re.compile(r"^(?:tampilkan|tunjukkan|lihat|show)?\s*(?:laporan\s+|hasil\s+|poin\s+)?eda"
+                  r"(?:\s+(?!P\d+\b)([A-Za-z_]\w*))?\s*$", re.I)
+_EDA_TALK = re.compile(r"^(?:citra[,:]?\s+)?(?:tidak\s+setuju|keberatan(?:\s+dengan)?|diskusikan|bahas|"
+                       r"bantah)\s+(?:poin\s+)?(P\d+)\b\s*[:,-]?\s*(.*)$", re.I | re.S)
 _AGG_NAME = {"bad rate": "bad_rate", "jumlah": "count", "count": "count", "rata-rata": "mean",
              "mean": "mean", "median": "median", "missing": "missing_rate",
              "missing rate": "missing_rate"}
@@ -161,7 +168,12 @@ class AgentRuntime:
         from .tools import ToolBox
         box = ToolBox(self.office, agent, meeting_id)
         try:
-            if m := _VIN.match(body):
+            if m := _EDA.match(body):
+                r = box.show_eda(m.group(1))
+                say = (f"EDA {m.group(1)} sudah di papan, Boss." if m.group(1) else
+                       f"Poin EDA sudah di papan, Boss: {len(r['points'])} poin dengan tanggapan Citra "
+                       "dan hasil diskusinya.")
+            elif m := _VIN.match(body):
                 r = box.show_vintage(int(m.group(1)) if m.group(1) else None)
                 rc = r["recommendation"]
                 say = (f"Vintage sudah di papan, Boss. Rekomendasi saya: pernah {rc['threshold']}+ "
@@ -198,6 +210,8 @@ class AgentRuntime:
         shown = self.show_command(body, agent, meeting_id)
         if shown is not None:
             return shown
+        if m := _EDA_TALK.match(body):                 # "diskusikan P3: ..." ($0)
+            return self._eda_talk(m.group(1), m.group(2).strip())
         if m := _DERIVE.match(body):                   # "variabel baru dti = a / b" ($0)
             return self._derive_command(m.group(1))
         if m := _MEANING.match(body):                  # "arti el = exposure limit" ($0)
@@ -240,6 +254,23 @@ class AgentRuntime:
                           + f"missing {pv['missing_rate']:.0%}. Setelah Boss ACC, variabelnya masuk "
                           "dataset dan kamus (direview Laras), dan jadi kandidat di cut berikutnya.",
                           "happy", [r["proposal_id"]], kind="command")
+
+    def _eda_talk(self, point: str, argument: str) -> AgentReply:
+        if not argument:
+            return AgentReply("citra", f"Boleh, Boss. Argumennya apa untuk {point.upper()}? Contoh: "
+                              f"\"diskusikan {point.upper()}: missing-nya informatif, bad rate 12% vs 5%\".",
+                              "thinking", kind="command")
+        try:
+            r = self.office.dispute_eda(point, argument)
+        except (ValueError, KeyError) as e:
+            return AgentReply("citra", f"Belum bisa, Boss: {str(e).strip(chr(39))}.", "apologetic",
+                              kind="command")
+        return AgentReply("citra", f"Sudah saya diskusikan dengan Bening, Boss. Hasil {r['point']}: "
+                          f"{r['outcome']}. {r['decision']}"
+                          + (f" {r['question_for_boss']}" if r.get("question_for_boss") else "")
+                          + (" Notulennya sudah dicek Laras." if r["review"] == "approved" else
+                             " Notulennya belum lolos cek Laras; Bening memperbaikinya."),
+                          "serious", [r["proposal"]] if r.get("proposal") else [], kind="command")
 
     def _meaning_command(self, name: str, arti: str) -> AgentReply:
         try:
@@ -366,7 +397,8 @@ class AgentRuntime:
     def is_shortcut(text: str) -> bool:
         """A $0 command that runs at once (show data, change features, pass a message)."""
         body = re.sub(r"^\s*@\w+\s*", "", text).strip()
-        return bool(_VIN.match(body) or _SAMPLE.match(body) or _AGG.match(body) or _RELAY.search(body)
+        return bool(_EDA.match(body) or _EDA_TALK.match(body) or _VIN.match(body) or _SAMPLE.match(body)
+                    or _AGG.match(body) or _RELAY.search(body)
                     or any(rx.match(body) for rx, _ in _CMDS))
 
     def who(self, text: str, to: str | None = None, default: str = "laras",
@@ -378,7 +410,10 @@ class AgentRuntime:
             agent = to
         else:
             body = re.sub(r"^\s*@\w+\s*", "", text).strip()
-            if not route(text, "") and (_VIN.match(body) or _SAMPLE.match(body) or _AGG.match(body)):
+            if _EDA_TALK.match(body):
+                agent = "citra"
+            elif not route(text, "") and (_EDA.match(body) or _VIN.match(body) or _SAMPLE.match(body)
+                                          or _AGG.match(body)):
                 agent = "bening"
             else:
                 agent = route(text, default)

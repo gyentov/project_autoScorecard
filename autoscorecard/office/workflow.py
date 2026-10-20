@@ -1,7 +1,7 @@
 """The project flow, run by the team:
 
     kickoff (Laras)  ->  data & joins (Bening)  ->  target & split (Bening)
-    -> waterfall plan (Citra)  ->  Cut 1  ->  Cut 2 (final)  [-> Cut 3, ... on request]
+    -> dictionary + EDA (Bening; Citra reviews, Laras checks)  ->  waterfall plan (Citra)  ->  Cut 1  ->  Cut 2 (final)  [-> Cut 3, ... on request]
     -> deck (Kirana, Phase 3)
 
 Every stage does real engine work, then Laras arranges a meeting where the
@@ -24,6 +24,7 @@ from .flow.cuts import CutsMixin
 from .flow.data import DataMixin
 from .flow.deliverables_orders import DeliverableOrdersMixin
 from .flow.dictionary import DictionaryMixin
+from .flow.eda import EdaMixin
 from .flow.handover import HandoverMixin
 from .flow.plan import PlanMixin
 from .flow.relays import RelayMixin
@@ -38,7 +39,7 @@ from .timeline import Timeline
 
 
 class Office(DataMixin, HandoverMixin, RelayMixin, ConversationMixin,
-             StagesMixin, DeliverableOrdersMixin, DictionaryMixin, PlanMixin,
+             StagesMixin, DeliverableOrdersMixin, DictionaryMixin, EdaMixin, PlanMixin,
              CutsMixin, ScoreReportMixin):
     def __init__(self, project, router, settings, inline_jobs: bool = False):
         self.project, self.router, self.settings = project, router, settings

@@ -10,6 +10,7 @@ from ..meetings import choice
 ACTION_LABEL = {"document_variables": "mendokumentasikan arti variabel",
                 "feature_meanings": "memasangkan kamus ke fitur model",
                 "make_deck": "menyusun draft deck",
+                "run_eda": "menjalankan EDA",
                 "make_documentation": "menyusun dokumentasi model"}
 
 _DATA: dict[str, dict] = {}          # project id -> {"df", "y"} (row-level, never sent to LLMs)

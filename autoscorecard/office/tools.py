@@ -69,6 +69,13 @@ class ToolBox:
             self._timeline_tools()
         if agent == "bening":
             self._dictionary_tools()
+        if agent == "citra":
+            self._add("dispute_eda_point", "ANGKAT/BANTAH POIN EDA Bening (misal P3) dengan argumenmu "
+                      "(pakai angka). Bening menjawab dari datanya, hasilnya dicatat di notulen diskusi "
+                      "dan dicek Laras; kalau masih beda pendapat, Boss yang memutuskan.",
+                      {"point": {"type": "string", "description": "nomor poin, misal P3"},
+                       "argument": {"type": "string", "description": "argumenmu, dengan angka"}},
+                      ["point", "argument"], lambda point, argument: self.office.dispute_eda(point, argument))
 
     # ------------------------------------------------------------- plumbing
     def _add(self, name: str, desc: str, props: dict, required: list[str], fn) -> None:
@@ -81,7 +88,7 @@ class ToolBox:
     # tools that only look: calling them does not count as doing what was asked
     READ_ONLY = {"project_status", "tables", "join_plan", "target_info", "feature_status",
                  "iv_table", "bin_table", "performance", "dictionary_gaps", "cost_status",
-                 "check_teammate_work"}
+                 "check_teammate_work", "eda"}
 
     def acted(self) -> bool:
         return any(n not in self.READ_ONLY for n in self.called)
@@ -133,6 +140,15 @@ class ToolBox:
                   "menjelaskan arti variabel; jangan menebak.",
                   {"name": {**S, "description": "nama variabel atau tabel; kosong = ringkasan"}},
                   [], lambda name=None: o.dictionary_lookup(name))
+        self._add("eda", "EDA BENING (versi yang lolos cek Laras): ringkasan dan semua poin, satu poin "
+                  "(P3: temuan, tanggapan Citra, notulen diskusi), atau statistik satu variabel (missing, "
+                  "kuantil, outlier, AUC, PSI). Pakai sebelum menjelaskan kualitas data; jangan menebak.",
+                  {"name": {**S, "description": "nomor poin (P3) atau nama variabel; kosong = ringkasan"}},
+                  [], lambda name=None: o.eda_lookup(name))
+        self._add("show_eda", "TAMPILKAN DI PAPAN poin EDA Bening dengan tanggapan Citra dan hasil "
+                  "diskusinya, atau statistik deskriptif satu variabel.",
+                  {"variable": {**S, "description": "nama variabel; kosong = semua poin"}}, [],
+                  self.show_eda)
         self._add("cost_status", "Budget LLM terpakai dan sisa.", {}, [], o.cost_status)
         # showing data on the board (all agents)
         arr = lambda items: {"type": "array", "items": items}             # noqa: E731
@@ -171,6 +187,9 @@ class ToolBox:
         self._add("document_variables", "Dokumentasikan arti setiap variabel dan tabel, terjemahkan "
                   "kamus bank ke bahasa Indonesia; hasilnya file kamus dan email ke Boss.", {}, [],
                   lambda: {k: v for k, v in o.document_variables(translate=True).items() if k != "rows"})
+        self._add("run_eda", "Jalankan EDA (statistik deskriptif, hubungan dengan target, stabilitas, "
+                  "korelasi), poin Bening, review Citra, diskusi, dan cek Laras; laporan dikirim ke Boss.",
+                  {}, [], o.run_eda)
         self._add("make_documentation", "Susun dokumentasi model lengkap (HTML) dari cut terakhir.",
                   {}, [], o.make_documentation)
         self._add("make_deck", "Susun draft deck presentasi (HTML, bahasa Inggris) untuk direview Boss.",
@@ -276,6 +295,36 @@ class ToolBox:
         self._show(f"Kolom {what}", f'<p class="muted">{len(df):,} baris, {df.shape[1]} '
                    f"kolom</p>" + html_table(rec))
         return {"shown_on_board": f"Kolom {what}", "columns": rec}
+
+    def show_eda(self, variable: str | None = None) -> dict:
+        from . import edadoc as ED, edareview as ER
+        o = self.office
+        doc, eda = ER.working(o.project), ER.stats(o.project)
+        if not doc or not eda:
+            raise ValueError("EDA belum ada; Bening menjalankannya setelah target di-ACC")
+        if variable:
+            v = next((x for x in eda["variables"] if x["variable"] == variable), None)
+            if v is None:
+                raise KeyError(f"'{variable}' bukan kandidat fitur di EDA")
+            stats = {k: v.get(k) for k in ("kind", "n", "missing_rate", "n_unique", "mean", "std", "min",
+                                           "p1", "p5", "p50", "p95", "p99", "max", "skew", "outlier_share")
+                     if v.get(k) is not None}
+            stats.update({f"target_{k}": v["target"][k] for k in ("auc", "missing_bad_rate",
+                                                                  "filled_bad_rate", "trend_rho")
+                          if v["target"].get(k) is not None})
+            stats.update({f"stabilitas_{k}": x for k, x in (v.get("stability") or {}).items() if x is not None})
+            rows = [r for r, p in zip(ED.points_rows(doc), doc["points"]) if variable in p["variables"]]
+            body = html_table([{"statistik": k, "nilai": x} for k, x in stats.items()])
+            if v["target"].get("bands"):
+                body += "<h3>Bad rate per band kuantil</h3>" + html_table(v["target"]["bands"])
+            if rows:
+                body += "<h3>Poin EDA</h3>" + html_table(rows)
+            self._show(f"EDA {variable}", body)
+            return {"shown_on_board": f"EDA {variable}", "stats": stats, "points": rows}
+        review = ER.last_review(o.project) or {}
+        self._show("EDA Bening & diskusi", ED.slide(doc, review))
+        return {"shown_on_board": "EDA Bening & diskusi", "points": ED.points_rows(doc)[:30],
+                "review": review.get("status")}
 
     def assign_task(self, to: str, task: str) -> dict:
         msg = self.office.relay_message(self.agent, to, task, kind="tugas")

@@ -389,13 +389,20 @@ class StagesMixin:
         self.timeline.set("target", "done")
         self._end(m, f"Target di-ACC: bad = {t['column']} {rule} {t['value']}"
                   + (f"; OOT mulai {t['oot_from']}." if t.get("oot_from") else "."),
-                  ["Bening: dokumentasikan arti tiap variabel, lalu serahkan ke Citra.",
-                   "Citra: rencana waterfall."])
+                  ["Bening: dokumentasikan arti tiap variabel, lalu EDA; Citra mereview, Laras "
+                   "mengecek notulen diskusinya.", "Citra: rencana waterfall."])
         self.events.emit("approval", "boss", what="target", decision="accepted")
+
+        def eda():                        # the data described, reviewed and discussed
+            self.run_eda()
+            return self._work("citra", ["membaca kamus dan EDA dari Bening",
+                                        "menyusun rencana waterfall"], self.plan_stage)
 
         def handover():                   # only after the variables are understood and written down
             self.document_variables()
-            return self._work("citra", ["membaca kamus variabel dari Bening",
-                                        "menyusun rencana waterfall"], self.plan_stage)
+            self._eda_milestone("in_progress")
+            return self._work("bening", ["statistik deskriptif tiap variabel",
+                                         "hubungan dengan target dan stabilitas",
+                                         "menyusun poin EDA untuk Citra"], eda)
         return self._work("bening", ["membaca arti tiap variabel", "mencocokkan dengan kamus data",
                                      "mendokumentasikan kamus variabel"], handover)

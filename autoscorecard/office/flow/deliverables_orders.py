@@ -15,6 +15,8 @@ class DeliverableOrdersMixin:
         ("feature_meanings", "citra", re.compile(
             r"(pasang|cocok|map)\w*\W+(?:\w+\W+){0,4}?fitur|fitur\s+(terpilih|final|model)\W+(?:\w+\W+){0,3}?"
             r"(arti|makna|kamus)|(arti|makna|kamus)\W+(?:\w+\W+){0,3}?fitur\s+(terpilih|final|model)", re.I)),
+        ("run_eda", "bening", re.compile(
+            r"\beda\b|exploratory|(analisa|analisis|statistik)\w*\s+(?:data\s+)?deskriptif", re.I)),
         ("document_variables", "bening", re.compile(
             r"(infer\w*|arti|makna|terjemah\w*|kamus|dokumentasi\w*|jelaskan)\W+(?:\w+\W+){0,4}?"
             r"(variabel|kolom|tabel|kamus|data)|(variabel|kolom|tabel)\W+(?:\w+\W+){0,4}?"
@@ -40,6 +42,11 @@ class DeliverableOrdersMixin:
             r = self.feature_meanings()
             return (f"Kamus sudah saya pasangkan ke {r['n']} fitur di model {r['cut'].replace('cut', 'Cut ')} "
                     "(arti, poin, kontribusi); terlampir di email.")
+        if action == "run_eda":
+            r = self.run_eda()
+            return (f"EDA sudah saya jalankan: {r['points']} poin, {r['disagreed']} didiskusikan dengan "
+                    f"Citra, notulen {'lolos' if r['review'] == 'approved' else 'belum lolos'} cek Laras. "
+                    "Laporannya terlampir di email.")
         if action == "make_deck":
             r = self.make_deck()
             return f"Draft deck ({r['slides']} slide, HTML) sudah jadi untuk Boss review; terlampir di email."

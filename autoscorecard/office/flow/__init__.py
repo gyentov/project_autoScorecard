@@ -7,6 +7,7 @@
     stages               StagesMixin              Work the Boss can watch, the stage meetings (kickoff, data, target) and the vintage analysis.
     deliverables_orders  DeliverableOrdersMixin   Orders the office can do itself: documentation, deck, feature meanings.
     dictionary           DictionaryMixin          Bening's dictionary: its versions, Laras's review, meanings from discussions, derived variables.
+    eda                  EdaMixin                 Bening's EDA: descriptive statistics, her points, Citra's review, their discussion, Laras's check.
     plan                 PlanMixin                Citra's waterfall plan meeting and the plan editor.
     cuts                 CutsMixin                Model cuts: build (tuning on the final cut), results meeting with the deck on the projector.
     score_report         ScoreReportMixin         Citra's score report: contribution, bins, score bands (20 -> ideal), KS, risk levels.
