@@ -1,0 +1,10 @@
+# Cloudflare Pages: the site (the office UI, assets, and Python run in the browser).
+# Build: `npm run build` -> dist/. See docs/deploy_cloudflare.md.
+name = "autoscorecard"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-09-30"
+
+# /llm/* -> the LLM Worker (worker/wrangler.toml), which holds the API keys.
+[[services]]
+binding = "LLM"
+service = "autoscorecard-llm"

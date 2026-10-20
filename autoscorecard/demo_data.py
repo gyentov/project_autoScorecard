@@ -124,7 +124,7 @@ def make_demo_data(n: int = 6000, seed: int = 7) -> dict[str, pd.DataFrame]:
     })
 
     # bureau: 0-6 previous loans per customer
-    n_prev = rng.poisson(2, n_cust)
+    n_prev = rng.poisson(2, n_cust).astype(np.intp)    # repeat counts: intp, 32-bit in the browser
     b_cust = np.repeat(cust_ids, n_prev)
     hist_risk = rng.normal(size=n_cust)                                 # hidden
     b_risk = np.repeat(hist_risk, n_prev)

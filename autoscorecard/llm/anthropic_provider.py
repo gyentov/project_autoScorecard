@@ -15,36 +15,10 @@ from autoscorecard.config import ProviderConfig
 from autoscorecard.llm.base import (
     AuthFailed, BadRequest, OutOfCredit, Provider, RateLimited, Transient,
 )
-from autoscorecard.llm.types import (
-    LLMRequest, LLMResponse, Message, Text, ToolCall, ToolResult, Usage,
-)
+from autoscorecard.llm.formats import ANTHROPIC_STOP as _STOP_MAP, to_anthropic_messages
+from autoscorecard.llm.types import LLMRequest, LLMResponse, ToolCall, Usage
 
-_STOP_MAP = {
-    "end_turn": "end",
-    "stop_sequence": "end",
-    "tool_use": "tool_calls",
-    "max_tokens": "max_tokens",
-    "refusal": "refusal",
-}
-
-
-def to_anthropic_messages(messages: list[Message]) -> list[dict[str, Any]]:
-    out = []
-    for m in messages:
-        blocks = []
-        for b in m.content:
-            if isinstance(b, Text):
-                blocks.append({"type": "text", "text": b.text})
-            elif isinstance(b, ToolCall):
-                blocks.append({"type": "tool_use", "id": b.id, "name": b.name, "input": b.args})
-            elif isinstance(b, ToolResult):
-                blocks.append({
-                    "type": "tool_result", "tool_use_id": b.call_id,
-                    "content": b.content, "is_error": b.is_error,
-                })
-        out.append({"role": m.role, "content": blocks})
-    return out
-
+__all__ = ["AnthropicProvider", "to_anthropic_messages"]
 
 class AnthropicProvider(Provider):
     def __init__(self, name: str, cfg: ProviderConfig, client: anthropic.Anthropic | None = None):

@@ -14,3 +14,11 @@ autoscorecard.egg-info/
 assets/characters/_raw/
 assets/characters/_originals/
 assets/sprites/_raw/
+
+# Cloudflare build (npm run build) and local wrangler state; secrets never committed
+dist/
+.wrangler/
+.cache/
+.dev.vars*
+worker/.dev.vars*
+worker/src/config.generated.js

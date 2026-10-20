@@ -1,0 +1,23 @@
+{
+  "name": "autoscorecard-cloudflare",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare build of AutoScorecard: Pages site (Python in the browser) + LLM Worker. See docs/deploy_cloudflare.md.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node scripts/build_web.mjs",
+    "dev:worker": "node scripts/build_web.mjs --worker-only && wrangler dev -c worker/wrangler.toml --var REQUIRE_ACCESS:false --port 8787",
+    "dev:pages": "CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV=false wrangler pages dev dist --port 8788",
+    "deploy:worker": "node scripts/build_web.mjs --worker-only && wrangler deploy -c worker/wrangler.toml",
+    "test:worker": "node scripts/build_web.mjs --worker-only && node --test \"worker/test/*.test.mjs\""
+  },
+  "devDependencies": {
+    "wrangler": "4.147.0",
+    "yaml": "2.9.1"
+  },
+  "overrides": {
+    "sharp": "0.35.5"
+  }
+}

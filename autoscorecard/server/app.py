@@ -281,7 +281,7 @@ _OFFICES: dict[str, Office] = {}
 def _office(pid: str) -> Office:
     proj = _project(pid)
     if pid not in _OFFICES or _OFFICES[pid].project.root != proj.root:
-        _OFFICES[pid] = Office(proj, router, settings)
+        _OFFICES[pid] = Office(proj, router, settings, inline_jobs=settings.app.inline_jobs)
     return _OFFICES[pid]
 
 
@@ -514,6 +514,8 @@ def data_handover(pid: str, body: Handover):
 
 # --------------------------------------------------------------------------- the office UI (2b)
 # Mounted last so the /api routes above win.
-app.mount("/assets", StaticFiles(directory=ROOT / "assets"), name="assets")
+# (The browser build serves both from Cloudflare Pages; they are not in its Python files.)
+if (ROOT / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=ROOT / "assets"), name="assets")
 if STATIC.exists():
     app.mount("/", StaticFiles(directory=STATIC, html=True), name="ui")

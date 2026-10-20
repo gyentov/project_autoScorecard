@@ -5,7 +5,6 @@ OpenRouter, and local servers such as Ollama - only base_url and model differ.
 """
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import openai
@@ -14,57 +13,13 @@ from autoscorecard.config import ProviderConfig
 from autoscorecard.llm.base import (
     AuthFailed, BadRequest, OutOfCredit, Provider, RateLimited, Transient,
 )
-from autoscorecard.llm.types import (
-    LLMRequest, LLMResponse, Message, Text, ToolCall, ToolResult, Usage,
+from autoscorecard.llm.formats import (
+    OPENAI_STOP as _STOP_MAP, QUOTA_MARKERS as _QUOTA_MARKERS, parse_args as _parse_args,
+    to_openai_messages,
 )
+from autoscorecard.llm.types import LLMRequest, LLMResponse, ToolCall, Usage
 
-_STOP_MAP = {
-    "stop": "end",
-    "tool_calls": "tool_calls",
-    "function_call": "tool_calls",
-    "length": "max_tokens",
-    "content_filter": "refusal",
-}
-
-# Phrases that mean "you're out of money / daily quota", as opposed to a
-# short per-minute limit that clears by waiting.
-_QUOTA_MARKERS = ("insufficient_quota", "exceeded your current quota", "per day", "perday", "billing")
-
-
-def to_openai_messages(system: str, messages: list[Message]) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = [{"role": "system", "content": system}]
-    for m in messages:
-        texts = [b.text for b in m.content if isinstance(b, Text)]
-        calls = [b for b in m.content if isinstance(b, ToolCall)]
-        results = [b for b in m.content if isinstance(b, ToolResult)]
-        if m.role == "assistant":
-            msg: dict[str, Any] = {"role": "assistant", "content": "\n".join(texts) or None}
-            if calls:
-                msg["tool_calls"] = [
-                    {"id": c.id, "type": "function",
-                     "function": {"name": c.name, "arguments": json.dumps(c.args)}}
-                    for c in calls
-                ]
-            out.append(msg)
-        else:
-            # Tool results become separate role="tool" messages, before any user text.
-            for r in results:
-                content = f"ERROR: {r.content}" if r.is_error else r.content
-                out.append({"role": "tool", "tool_call_id": r.call_id, "content": content})
-            if texts:
-                out.append({"role": "user", "content": "\n".join(texts)})
-    return out
-
-
-def _parse_args(raw: str | None) -> dict[str, Any]:
-    if not raw:
-        return {}
-    try:
-        val = json.loads(raw)
-        return val if isinstance(val, dict) else {"value": val}
-    except json.JSONDecodeError:
-        return {"_unparsed": raw}
-
+__all__ = ["OpenAICompatProvider", "to_openai_messages"]
 
 class OpenAICompatProvider(Provider):
     def __init__(self, name: str, cfg: ProviderConfig, client: openai.OpenAI | None = None):

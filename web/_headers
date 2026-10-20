@@ -1,0 +1,13 @@
+/sw.js
+  Cache-Control: no-cache
+  Service-Worker-Allowed: /
+/py/*
+  Cache-Control: no-cache
+/web/*
+  Cache-Control: no-cache
+/js/*
+  Cache-Control: no-cache
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: same-origin
+  X-Frame-Options: SAMEORIGIN
