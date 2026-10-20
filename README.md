@@ -18,6 +18,11 @@ cp .env.example .env        # add whichever keys you have; missing ones are skip
 .venv/bin/python -m pytest  # no keys needed
 ```
 
+## Cloudflare version
+The same app can also run on Cloudflare: Python runs in the browser (Pyodide), projects stay in
+that browser, and a small Worker holds the LLM keys behind Cloudflare Access. Local mode above
+is unchanged. Setup, local `wrangler` dev and deploy: [docs/deploy_cloudflare.md](docs/deploy_cloudflare.md).
+
 ## Useful commands
 ```bash
 .venv/bin/uvicorn autoscorecard.server.app:app   # the pixel office: open http://127.0.0.1:8000/

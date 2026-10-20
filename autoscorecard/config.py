@@ -49,6 +49,10 @@ class AppConfig(BaseModel):
     ledger_path: Path = Path("data/ledger/usage.jsonl")
     agent_language: Literal["id", "en"] = "id"
     deck_language: Literal["id", "en"] = "en"
+    # The browser build (Pyodide) has no threads: jobs run inside the request.
+    inline_jobs: bool = False
+    # The browser build calls LLMs through the Worker at this URL (keys stay there).
+    llm_proxy_url: str | None = None
 
 
 class BudgetConfig(BaseModel):
@@ -104,6 +108,6 @@ class Settings(BaseModel):
 
 def load_settings(path: Path | str | None = None, env_file: Path | str | None = None) -> Settings:
     load_dotenv(env_file or ROOT / ".env", override=False)
-    path = Path(path) if path else DEFAULT_CONFIG
+    path = Path(path or os.environ.get("AUTOSCORECARD_CONFIG") or DEFAULT_CONFIG)
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     return Settings.model_validate(data).resolve_paths(ROOT)

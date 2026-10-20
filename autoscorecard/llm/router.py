@@ -27,7 +27,10 @@ class AllProvidersFailed(Exception):
     pass
 
 
-def build_provider(name: str, cfg: ProviderConfig) -> Provider:
+def build_provider(name: str, cfg: ProviderConfig, proxy_url: str | None = None) -> Provider:
+    if proxy_url and cfg.type in ("anthropic", "openai_compat"):
+        from autoscorecard.llm.proxy import ProxyProvider
+        return ProxyProvider(name, cfg, proxy_url)
     if cfg.type == "anthropic":
         from autoscorecard.llm.anthropic_provider import AnthropicProvider
         return AnthropicProvider(name, cfg)
@@ -58,7 +61,7 @@ class LLMRouter:
     # ---- helpers -------------------------------------------------------
     def _provider(self, name: str) -> Provider:
         if name not in self._providers:
-            p = build_provider(name, self.settings.providers[name])
+            p = build_provider(name, self.settings.providers[name], self.settings.app.llm_proxy_url)
             if hasattr(p, "language"):
                 p.language = self.settings.app.agent_language
             self._providers[name] = p

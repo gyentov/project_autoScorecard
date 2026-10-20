@@ -1,0 +1,17 @@
+# The LLM Worker: holds the API keys, checks every call, records cost in D1.
+# Deploy: `npm run deploy:worker`. Keys: `npx wrangler secret put <NAME> -c worker/wrangler.toml`.
+name = "autoscorecard-llm"
+main = "src/index.js"
+compatibility_date = "2026-09-30"
+
+# No public URL: only the site reaches it, through the service binding in ../wrangler.toml.
+workers_dev = false
+preview_urls = false
+
+[vars]
+REQUIRE_ACCESS = "true"     # `npm run dev:worker` turns this off on your machine only
+
+[[d1_databases]]
+binding = "DB"
+database_name = "autoscorecard"
+database_id = "f03164a7-838f-4692-ba6a-67389689e75f"
